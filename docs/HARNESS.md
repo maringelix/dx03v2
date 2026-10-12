@@ -2,8 +2,8 @@
 
 O harness é o conjunto de checks que prova o que este repositório afirma, sem conta na nuvem.
 Ele vive em `scripts/harness.sh`; o `Makefile` e o CI só o chamam. O que passa localmente com
-`HARNESS_STRICT=1` deve passar no CI (o CI ainda não rodou no GitHub: tudo abaixo está
-`verificado localmente`, em containers Linux).
+`HARNESS_STRICT=1` passa no CI (jobs `static`, `test`, `images` e `e2e`: `verificado no CI`) e
+localmente em containers Linux.
 
 ## Camadas
 

@@ -14,8 +14,8 @@ is the source of truth. The full rule list (pt-BR) is [docs/GUARDRAILS.md](docs/
   external Application Load Balancer) and Cloud Armor.
 - It must stay healthy without any cloud account: every claim is backed by the harness or carries a
   status label (`verified in CI`, `verified locally`, `not run in the cloud (v2)`, `planned`).
-- Current status: static, test, build and the kind e2e pass locally in Linux containers
-  (`verified locally`); the CI jobs `static`, `test`, `images` and `e2e` have not run on GitHub yet.
+- Current status: static, test, build and the kind e2e pass locally in Linux containers and in CI
+  (jobs `static`, `test`, `images`, `e2e`).
   `scripts/deploy-gcp.sh` was exercised offline with stub `gcloud`/`kubectl`/`docker` only.
   **Nothing of v2 has run in Google Cloud** (`deploy-gcp` is `not run in the cloud (v2)`).
 - The interface with `tx03v2` is [docs/CONTRATO.md](docs/CONTRATO.md) (contract v1, owned by tx03v2).

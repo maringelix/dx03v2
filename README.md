@@ -35,24 +35,23 @@ The lab family (v2):
 
 | Capability | Status | Evidence |
 |---|---|---|
-| Lint, formatting and type checks (eslint, prettier, tsc for `api` and `web`) | `verified locally` | `make static` (`eslint`, `prettier`, `typecheck:*`); CI job `static` |
-| Dockerfiles, workflows and scripts (hadolint, actionlint, shellcheck) | `verified locally` | `make static` (`hadolint`, `actionlint`, `shellcheck`) |
-| Kubernetes manifests: kustomize render + kubeconform strict (local, gcp, gcp-waf) with Gateway API v1.5.0 schemas generated from the official release asset and the `networking.gke.io` schemas of a pinned catalog commit, contract and hardening assertions, trivy config | `verified locally` | `make static` (`crd-schemas`, `kubeconform`, `contract-app`, `trivy-config`) |
-| Deploy script against contract v1 (the 15 Parameter Manager keys, fixed values, Cloud SQL CA root, both overlays, read-only gcloud calls) | `verified locally` | `make static` (`contract-app`) |
-| Secret scan and repository policies (placeholder identifiers only, pinned actions and images, Workload Identity Federation only, v1 regressions, no leftovers of the AWS or Azure paths) | `verified locally` | `make static` (`gitleaks`, `policy-*`, `repo-structure`, `version-consistency`) |
-| API unit + integration tests against a real PostgreSQL 17 (coverage gate: lines >= 80 %, branches >= 70 %), including the `X-Forwarded-For` of the Google Cloud load balancer | `verified locally` | `make test` (`test:api`); CI job `test` |
-| Web tests with Testing Library + jsdom (coverage gate: lines >= 70 %) | `verified locally` | `make test` (`test:web`); CI job `test` |
-| Images: build, numeric non-root user, no npm or shell in the API runtime, trivy HIGH/CRITICAL gate | `verified locally` | `make build`; CI job `images` |
+| Lint, formatting and type checks (eslint, prettier, tsc for `api` and `web`) | `verified in CI` | `make static` (`eslint`, `prettier`, `typecheck:*`); CI job `static` |
+| Dockerfiles, workflows and scripts (hadolint, actionlint, shellcheck) | `verified in CI` | `make static` (`hadolint`, `actionlint`, `shellcheck`) |
+| Kubernetes manifests: kustomize render + kubeconform strict (local, gcp, gcp-waf) with Gateway API v1.5.0 schemas generated from the official release asset and the `networking.gke.io` schemas of a pinned catalog commit, contract and hardening assertions, trivy config | `verified in CI` | `make static` (`crd-schemas`, `kubeconform`, `contract-app`, `trivy-config`) |
+| Deploy script against contract v1 (the 15 Parameter Manager keys, fixed values, Cloud SQL CA root, both overlays, read-only gcloud calls) | `verified in CI` | `make static` (`contract-app`) |
+| Secret scan and repository policies (placeholder identifiers only, pinned actions and images, Workload Identity Federation only, v1 regressions, no leftovers of the AWS or Azure paths) | `verified in CI` | `make static` (`gitleaks`, `policy-*`, `repo-structure`, `version-consistency`) |
+| API unit + integration tests against a real PostgreSQL 17 (coverage gate: lines >= 80 %, branches >= 70 %), including the `X-Forwarded-For` of the Google Cloud load balancer | `verified in CI` | `make test` (`test:api`); CI job `test` |
+| Web tests with Testing Library + jsdom (coverage gate: lines >= 70 %) | `verified in CI` | `make test` (`test:web`); CI job `test` |
+| Images: build, numeric non-root user, no npm or shell in the API runtime, trivy HIGH/CRITICAL gate | `verified in CI` | `make build`; CI job `images` |
 | Compose stack (PostgreSQL → migrate → api → web on 127.0.0.1) + smoke test | `verified locally` | `scripts/dev-env.sh`, `scripts/compose-smoke.sh` (manual, not part of CI) |
-| kind end-to-end: Pod Security `restricted`, smoke test through nginx, NetworkPolicy enforcement | `verified locally` | `make e2e` (`scripts/e2e-kind.sh`); CI job `e2e` |
+| kind end-to-end: Pod Security `restricted`, smoke test through nginx, NetworkPolicy enforcement | `verified in CI` | `make e2e` (`scripts/e2e-kind.sh`); CI job `e2e` |
 | Google Cloud deploy (Artifact Registry push, GKE Autopilot of tx03v2, ExternalSecrets from Secret Manager, GKE Gateway + Cloud Armor, smoke test through the load balancer) | `not run in the cloud (v2)` | `.github/workflows/deploy-gcp.yml`, `scripts/deploy-gcp.sh`, `docs/RUNBOOK.md` |
 | HTTPS on the Gateway listener | `planned` | needs a certificate; outside contract v1 (`docs/CONTRATO.md`) |
 | Repository settings as code (ruleset, environment `lab`) | `planned` | `scripts/repo-guardrails.sh`, `docs/PUBLICACAO.md` |
 
-The CI has not run on GitHub yet: every harness row passes locally in Linux containers
-(`HARNESS_STRICT=1`), and one pull request flips the CI rows to `verified in CI` after the first
-green run (jobs in the Evidence column; then on every pull request, every push to `main` and
-weekly). The compose row stays `verified locally`. `scripts/deploy-gcp.sh` was also run offline
+`verified in CI` rows run in the CI jobs of the Evidence column (`HARNESS_STRICT=1`, on every pull
+request, every push to `main` and weekly) and pass locally in Linux containers. The compose row
+stays `verified locally`. `scripts/deploy-gcp.sh` was also run offline
 against stub `gcloud`/`kubectl`/`docker` (13 scenarios, docs/HARNESS.md); that is not a cloud run.
 The Google Cloud row changes only with a `cloud_run_report` issue (date, region, commits, cost,
 smoke output, leftovers).
