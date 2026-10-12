@@ -113,8 +113,8 @@ dos health checks — por isso as NetworkPolicies liberam essas duas faixas, e n
    2026-10-11) diz que o proxy acrescenta `<ip do cliente>,<ip do load balancer>` ao que o cliente
    mandou em `X-Forwarded-For`, e a conexão chega de um Google Front End: com dois saltos
    confiáveis, `req.ip` é o cliente e entradas falsas à esquerda são ignoradas. O teste de integração
-   `rate-limit` cobre esse formato (caso a mais em relação ao dx01v2 e ao dx02v2) e o smoke prova o
-   429 com `X-Forwarded-For` falso diferente a cada requisição.
+   `rate-limit` cobre esse formato (o mesmo caso está no dx01v2 e no dx02v2) e o smoke prova o 429
+   com `X-Forwarded-For` falso diferente a cada requisição.
 5. **Rate limit de escrita em memória.** `express-rate-limit` por `req.ip`, 10 por minuto por padrão,
    contado antes da validação. Com N réplicas o limite efetivo chega a N vezes; um store
    compartilhado (Redis) ficou de fora por custo e complexidade.
