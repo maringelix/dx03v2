@@ -20,8 +20,8 @@ plataforma) é do `tx03v2`, com a sustentação descrita lá.
 - Contrato com o tx03v2: versão 1 (`docs/CONTRATO.md`), espelho da parte do app do
   `docs/CONTRATO.md` do tx03v2.
 - App: o do `dx02v2` (que é o do `dx01v2` no commit `22e69c4`), com as diferenças da seção 5.11.
-  Pendência de paridade: o teste de integração do `X-Forwarded-For` do load balancer do Google Cloud
-  (`TRUST_PROXY_HOPS=2`) existe só aqui até ser portado para o dx01v2 e o dx02v2.
+  O caso do `X-Forwarded-For` do load balancer do Google Cloud (`TRUST_PROXY_HOPS=2`) no teste de
+  integração `rate-limit` começou aqui e já está no dx01v2 e no dx02v2.
 - Exceções de scanner: nenhuma (`.trivyignore.yaml` vazio).
 
 ## 3. Rotinas
@@ -200,10 +200,6 @@ rm -rf "$ref"
 
 Diferenças esperadas em relação ao dx02v2 (só estas, verificadas em 2026-10-12):
 
-- `api/test/integration/rate-limit.test.ts`: um caso a mais, o `X-Forwarded-For`
-  `<cliente>,<load balancer>` do Application Load Balancer do Google Cloud com `TRUST_PROXY_HOPS=2`.
-  **Pendente de porte** para o dx01v2 e o dx02v2 (um PR em cada; o teste vale para qualquer app com
-  dois saltos confiáveis). Depois do porte, esta linha sai da lista.
 - `e2e/smoke.mjs`: `SMOKE_EDGE` com `nginx` e `gke`, e a checagem do `X-Request-Id` atrás do Gateway
   (só a propriedade de segurança); compose e kind com as mesmas asserções.
 - `api/Dockerfile.dockerignore` e `web/Dockerfile.dockerignore`: a exclusão de `**/gha-creds-*.json`

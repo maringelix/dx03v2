@@ -12,6 +12,9 @@ All notable changes to this project are documented here. The format follows
   `verified in CI` for the rows backed by a CI job (compose stays `verified locally`).
 - Dependabot ignores major bumps of the `node` build image (it follows `.nvmrc` and `engines.node`;
   `node:26` failed `npm ci` with EBADENGINE).
+- The parity notes (docs/SUSTENTACAO.md sections 2 and 5.11, docs/ARQUITETURA.md) no longer list
+  the Google Cloud load balancer case of the rate-limit test as pending: dx01v2 and dx02v2 have it
+  too (ported on 2026-10-12).
 
 ### Added
 
@@ -56,7 +59,7 @@ All notable changes to this project are documented here. The format follows
     Azure paths.
   - One API integration test more (`api/test/integration/rate-limit.test.ts`): the
     `[<supplied>,]<client-ip>,<lb-ip>` `X-Forwarded-For` of the Google Cloud Application Load
-    Balancer with `TRUST_PROXY_HOPS=2`. It exists only here until it is ported to dx01v2 and dx02v2
+    Balancer with `TRUST_PROXY_HOPS=2`. It started here and was then ported to dx01v2 and dx02v2
     (parity, docs/SUSTENTACAO.md).
   - Brazilian Portuguese docs for the Google Cloud pair: architecture (AWS / Azure / Google Cloud and
     v1 → v2 tables), contract v1 (app side), runbook, guardrails, harness, sustainment (GKE, Gateway
