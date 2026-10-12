@@ -1,0 +1,13 @@
+# kind cluster of the e2e stage (scripts/e2e-kind.sh, cluster dx03v2-e2e). One node with Kubernetes
+# 1.36: the same minor as the GKE lab cluster of tx03v2, kubectl and the kubeconform schemas.
+# kindnet, the default CNI, enforces NetworkPolicy since kind v0.24.0 (kube-network-policies); the
+# e2e proves it with probe pods. The API server listens on 127.0.0.1 only (random port).
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+name: dx03v2-e2e
+networking:
+  apiServerAddress: 127.0.0.1
+nodes:
+  - role: control-plane
+    # Node image v1.36.4 published in the kind v0.33.0 release notes (verified 2026-10-10)
+    image: kindest/node:v1.36.4@sha256:099e049362a1526b2db71494e1947aae99bd16290d7c895f2b7ea312e3cbfaed

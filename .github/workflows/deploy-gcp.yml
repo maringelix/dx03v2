@@ -1,0 +1,85 @@
+# Deploys dx03v2 to the GKE Autopilot lab cluster of tx03v2 (contract v1, docs/CONTRATO.md).
+# CLOUD-MUTATING and billable (Artifact Registry images, the global external Application Load
+# Balancer programmed by the GKE Gateway controller, Cloud Armor): dispatch manually after the
+# tx03v2 apply and platform workflows; tear down with the tx03v2 destroy. The `lab` environment
+# (required reviewer, main only) gates the Workload Identity Federation binding of the service
+# account dx03v2-gha-deploy (subject repo:<owner>/dx03v2:environment:lab). Not run in the cloud
+# yet (v2). Every step of the deploy lives in scripts/deploy-gcp.sh, the same script a laptop runs.
+name: deploy-gcp
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: dx03v2-lab-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    environment: lab
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Check repository variables
+        env:
+          GCP_PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
+          GCP_WORKLOAD_IDENTITY_PROVIDER: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          GCP_DEPLOY_SERVICE_ACCOUNT: ${{ vars.GCP_DEPLOY_SERVICE_ACCOUNT }}
+        run: |
+          problems=()
+          for v in GCP_PROJECT_ID GCP_WORKLOAD_IDENTITY_PROVIDER GCP_DEPLOY_SERVICE_ACCOUNT; do
+            if [[ -z "${!v}" ]]; then
+              problems+=("$v is not set")
+            fi
+          done
+          if [[ -n "$GCP_PROJECT_ID" && ! "$GCP_PROJECT_ID" =~ ^[a-z][a-z0-9-]{4,28}[a-z0-9]$ ]]; then
+            problems+=("GCP_PROJECT_ID is not a Google Cloud project ID")
+          fi
+          if [[ -n "$GCP_WORKLOAD_IDENTITY_PROVIDER" && ! "$GCP_WORKLOAD_IDENTITY_PROVIDER" =~ ^projects/[0-9]+/locations/global/workloadIdentityPools/tx03v2-github/providers/github$ ]]; then
+            problems+=("GCP_WORKLOAD_IDENTITY_PROVIDER is not projects/<project number>/locations/global/workloadIdentityPools/tx03v2-github/providers/github")
+          fi
+          if [[ -n "$GCP_DEPLOY_SERVICE_ACCOUNT" && "$GCP_DEPLOY_SERVICE_ACCOUNT" != "dx03v2-gha-deploy@$GCP_PROJECT_ID.iam.gserviceaccount.com" ]]; then
+            problems+=("GCP_DEPLOY_SERVICE_ACCOUNT is not the e-mail of dx03v2-gha-deploy in GCP_PROJECT_ID")
+          fi
+          if ((${#problems[@]} > 0)); then
+            printf '::error::Repository variable problem: %s\n' "${problems[@]}"
+            echo "::error::Settings > Secrets and variables > Actions > Variables; see docs/RUNBOOK.md (section 'Variáveis do GitHub')."
+            exit 1
+          fi
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+
+      - name: Install kubectl (pinned, SHA256-verified)
+        run: bash scripts/install-tools.sh kubectl
+
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      # Workload Identity Federation only (no service account key). The credentials file
+      # gha-creds-*.json lands in the workspace: .gitignore and every build context exclude it.
+      - uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
+        with:
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_DEPLOY_SERVICE_ACCOUNT }}
+
+      - uses: google-github-actions/setup-gcloud@aa5489c8933f4cc7a4f7d45035b3b1440c9c10db # v3.0.1
+        with:
+          version: '588.0.0'
+          install_components: gke-gcloud-auth-plugin
+
+      - name: Deploy (scripts/deploy-gcp.sh)
+        env:
+          GCP_PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
+          GIT_SHA: ${{ github.sha }}
+        run: bash scripts/deploy-gcp.sh

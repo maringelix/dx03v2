@@ -1,0 +1,11 @@
+# Same as overlays/gcp plus the GCPBackendPolicies that attach the Cloud Armor policy; chosen by
+# scripts/deploy-gcp.sh when the Parameter Manager key waf/security-policy holds a policy name
+# (tx03v2 applied with enable_waf = true).
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: dx03v2
+resources:
+  - ../../base
+components:
+  - ../../components/gcp
+  - ../../components/gcp-waf

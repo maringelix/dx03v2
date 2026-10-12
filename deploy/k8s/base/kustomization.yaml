@@ -1,0 +1,21 @@
+# Environment-neutral manifests of the dx03v2 app (namespace-scoped only). Overlays:
+#   overlays/local    kind: namespace, PostgreSQL StatefulSet, local images
+#   overlays/gcp      GKE Autopilot (tx03v2): Gateway + HTTPRoute (global external Application
+#                     Load Balancer), health check policies, ExternalSecrets, HPA, load balancer,
+#                     Cloud SQL and node DNS cache policies, Artifact Registry images
+#   overlays/gcp-waf  same as gcp plus the GCPBackendPolicies that attach Cloud Armor
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+labels:
+  - pairs:
+      app.kubernetes.io/part-of: dx03v2
+    includeSelectors: false
+    includeTemplates: true
+resources:
+  - serviceaccounts.yaml
+  - configmap.yaml
+  - api.yaml
+  - web.yaml
+  - services.yaml
+  - pdb.yaml
+  - networkpolicies.yaml

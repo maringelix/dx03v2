@@ -1,0 +1,14 @@
+# Fallback for builders that ignore the Dockerfile-specific files (api/Dockerfile.dockerignore,
+# web/Dockerfile.dockerignore are the allowlists actually used by BuildKit).
+**/node_modules
+**/dist
+**/coverage
+**/.env*
+.git
+.tools
+.cache
+**/*.pem
+**/*.key
+**/params.env
+# Credentials file of google-github-actions/auth (deploy-gcp workflow)
+**/gha-creds-*.json

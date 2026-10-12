@@ -1,0 +1,47 @@
+name: Bug report
+description: Something in the app, the harness, the manifests, the scripts or the docs is wrong.
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the report. Do not paste credentials, admin tokens, project IDs or numbers, IPs or
+        e-mail addresses: replace them with placeholders such as `tx03v2-lab-example`, `000000000000`
+        or `<YOUR_IP>/32`.
+  - type: input
+    id: commit
+    attributes:
+      label: Commit SHA of dx03v2
+      placeholder: 40-character SHA
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - api (Express, PostgreSQL, migrations)
+        - web (React page, nginx)
+        - harness (make / scripts/harness.sh)
+        - compose (scripts/dev-env.sh, compose.yaml)
+        - kind e2e (scripts/e2e-kind.sh, deploy/k8s)
+        - Google Cloud deploy (scripts/deploy-gcp.sh, deploy-gcp workflow)
+        - GitHub workflows
+        - docs
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Exact commands, environment (devcontainer, WSL, Linux, macOS), Node.js and Docker versions.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected vs. actual result
+      description: Include the relevant PASS/FAIL lines, HTTP status and requestId, or error output (redacted).
+    validations:
+      required: true

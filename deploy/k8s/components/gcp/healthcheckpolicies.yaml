@@ -1,0 +1,48 @@
+# Load balancer health checks (networking.gke.io/v1, one HealthCheckPolicy per Service of the
+# HTTPRoute): web /healthz on 8080 and api /readyz on 3000, the container ports that the network
+# endpoint groups of the Gateway point at (pod IP and port). The policies make the probes explicit
+# instead of relying on the controller defaults. They come from the Google health check ranges,
+# like the traffic (NetworkPolicies web-ingress-from-lb, api-ingress-from-lb).
+apiVersion: networking.gke.io/v1
+kind: HealthCheckPolicy
+metadata:
+  name: web
+  labels:
+    app.kubernetes.io/name: web
+spec:
+  default:
+    checkIntervalSec: 5
+    timeoutSec: 3
+    healthyThreshold: 1
+    unhealthyThreshold: 2
+    config:
+      type: HTTP
+      httpHealthCheck:
+        port: 8080
+        requestPath: /healthz
+  targetRef:
+    group: ''
+    kind: Service
+    name: web
+---
+apiVersion: networking.gke.io/v1
+kind: HealthCheckPolicy
+metadata:
+  name: api
+  labels:
+    app.kubernetes.io/name: api
+spec:
+  default:
+    checkIntervalSec: 5
+    timeoutSec: 3
+    healthyThreshold: 1
+    unhealthyThreshold: 2
+    config:
+      type: HTTP
+      httpHealthCheck:
+        port: 3000
+        requestPath: /readyz
+  targetRef:
+    group: ''
+    kind: Service
+    name: api

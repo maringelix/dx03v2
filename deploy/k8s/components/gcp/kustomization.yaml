@@ -1,0 +1,171 @@
+# GKE Autopilot (tx03v2, contract v1). Namespace-scoped resources only: the dx03v2 namespace, the
+# ClusterSecretStore gcp-secret-manager, External Secrets Operator and the deployer RBAC belong to
+# tx03v2, and the GKE Gateway controller is managed by Google. Values read from the Parameter
+# Manager parameter tx03v2-lab-contract at deploy time (images, the reserved address name, the load
+# balancer source ranges, the Cloud SQL endpoint IP) arrive through params.env (gitignored, written
+# by scripts/deploy-gcp.sh into a temporary copy of deploy/k8s; params.example.env is what CI
+# renders) and are injected with replacements. The optional Cloud Armor policy is the separate
+# component gcp-waf. Not applied in the cloud yet (v2).
+apiVersion: kustomize.config.k8s.io/v1alpha1
+kind: Component
+labels:
+  - pairs:
+      app.kubernetes.io/part-of: dx03v2
+    includeSelectors: false
+    includeTemplates: true
+resources:
+  - gateway.yaml
+  - healthcheckpolicies.yaml
+  - externalsecrets.yaml
+  - hpa.yaml
+  - networkpolicies.yaml
+configMapGenerator:
+  - name: deploy-params
+    envs:
+      - params.env
+    options:
+      disableNameSuffixHash: true
+      annotations:
+        # Input of the replacements below; kustomize drops it from the output.
+        config.kubernetes.io/local-config: 'true'
+patches:
+  # TRUST_PROXY_HOPS=2: the global external Application Load Balancer appends
+  # `<client-ip>,<load-balancer-ip>` to X-Forwarded-For and the connection comes from a Google Front
+  # End, so the client is the second address from the right.
+  - target:
+      kind: ConfigMap
+      name: app-config
+    patch: |-
+      - op: add
+        path: /data/APP_ENV
+        value: lab
+      - op: add
+        path: /data/DB_SSL_MODE
+        value: verify-full
+      - op: add
+        path: /data/DB_SSL_CA_FILE
+        value: /etc/cloudsql-ca/ca.pem
+      - op: replace
+        path: /data/TRUST_PROXY_HOPS
+        value: '2'
+  # The HPA owns the replica count (2-4); keeping spec.replicas would reset it on every deploy.
+  # ConfigMap cloudsql-ca: the Cloud SQL CA bundle of the region, created by scripts/deploy-gcp.sh
+  # after checking its root against contract v1.
+  - target:
+      kind: Deployment
+      name: api
+    patch: |-
+      - op: remove
+        path: /spec/replicas
+      - op: add
+        path: /spec/template/spec/volumes
+        value:
+          - name: cloudsql-ca
+            configMap:
+              name: cloudsql-ca
+      - op: add
+        path: /spec/template/spec/initContainers/0/volumeMounts
+        value:
+          - name: cloudsql-ca
+            mountPath: /etc/cloudsql-ca
+            readOnly: true
+      - op: add
+        path: /spec/template/spec/containers/0/volumeMounts
+        value:
+          - name: cloudsql-ca
+            mountPath: /etc/cloudsql-ca
+            readOnly: true
+  # Autopilot raises any request below its minimum (general-purpose class with bursting: 50m CPU and
+  # 52 MiB of memory per Pod, memory between 1 and 6.5 GiB per vCPU; GKE doc "Resource requests in
+  # Autopilot", checked 2026-10-12). The web asks for 64Mi instead of the base 32Mi so that what
+  # runs is what the manifest says; the API pods are already above the minimums.
+  - target:
+      kind: Deployment
+      name: web
+    patch: |-
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/requests/memory
+        value: 64Mi
+replacements:
+  - source:
+      kind: ConfigMap
+      name: deploy-params
+      fieldPath: data.API_IMAGE
+    targets:
+      - select:
+          kind: Deployment
+          name: api
+        fieldPaths:
+          - spec.template.spec.initContainers.[name=migrate].image
+          - spec.template.spec.containers.[name=api].image
+  - source:
+      kind: ConfigMap
+      name: deploy-params
+      fieldPath: data.WEB_IMAGE
+    targets:
+      - select:
+          kind: Deployment
+          name: web
+        fieldPaths:
+          - spec.template.spec.containers.[name=web].image
+  - source:
+      kind: ConfigMap
+      name: deploy-params
+      fieldPath: data.GATEWAY_ADDRESS_NAME
+    targets:
+      - select:
+          kind: Gateway
+          name: dx03v2
+        fieldPaths:
+          - spec.addresses.0.value
+  # LB_SOURCE_RANGES holds the two contract ranges separated by a comma: one ipBlock each.
+  - source:
+      kind: ConfigMap
+      name: deploy-params
+      fieldPath: data.LB_SOURCE_RANGES
+      options:
+        delimiter: ','
+        index: 0
+    targets:
+      - select:
+          kind: NetworkPolicy
+          name: web-ingress-from-lb
+        fieldPaths:
+          - spec.ingress.0.from.0.ipBlock.cidr
+      - select:
+          kind: NetworkPolicy
+          name: api-ingress-from-lb
+        fieldPaths:
+          - spec.ingress.0.from.0.ipBlock.cidr
+  - source:
+      kind: ConfigMap
+      name: deploy-params
+      fieldPath: data.LB_SOURCE_RANGES
+      options:
+        delimiter: ','
+        index: 1
+    targets:
+      - select:
+          kind: NetworkPolicy
+          name: web-ingress-from-lb
+        fieldPaths:
+          - spec.ingress.0.from.1.ipBlock.cidr
+      - select:
+          kind: NetworkPolicy
+          name: api-ingress-from-lb
+        fieldPaths:
+          - spec.ingress.0.from.1.ipBlock.cidr
+  # DB_ENDPOINT_IP replaces the address part of `<ip>/32`.
+  - source:
+      kind: ConfigMap
+      name: deploy-params
+      fieldPath: data.DB_ENDPOINT_IP
+    targets:
+      - select:
+          kind: NetworkPolicy
+          name: api-egress-to-cloudsql
+        fieldPaths:
+          - spec.egress.0.to.0.ipBlock.cidr
+        options:
+          delimiter: /
+          index: 0

@@ -1,0 +1,222 @@
+/* Mural de mensagens. Colors meet WCAG AA contrast on their backgrounds (text >= 4.5:1);
+   focus is always visible; no inline styles anywhere (CSP style-src 'self'). */
+:root {
+  --text: #1f2937;
+  --muted: #4b5563;
+  --background: #f3f4f6;
+  --surface: #ffffff;
+  --border: #9ca3af;
+  --primary: #1d4ed8;
+  --primary-hover: #1e40af;
+  --danger: #b91c1c;
+  --danger-hover: #991b1b;
+  --success: #166534;
+  --focus: #b45309;
+  color-scheme: light;
+  font-family:
+    system-ui,
+    -apple-system,
+    'Segoe UI',
+    Roboto,
+    sans-serif;
+  line-height: 1.5;
+  color: var(--text);
+  background: var(--background);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+}
+
+.page {
+  max-width: 48rem;
+  margin: 0 auto;
+  padding: 1.5rem 1rem 3rem;
+}
+
+.masthead h1 {
+  margin: 0 0 0.25rem;
+  font-size: 1.875rem;
+}
+
+.content {
+  display: grid;
+  gap: 1.25rem;
+  margin-top: 1.5rem;
+}
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+  padding: 1rem 1.25rem;
+}
+
+.card h2 {
+  margin: 0 0 0.75rem;
+  font-size: 1.25rem;
+}
+
+.section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.muted {
+  color: var(--muted);
+}
+
+.field {
+  display: grid;
+  gap: 0.25rem;
+  margin-bottom: 1rem;
+}
+
+.field label {
+  font-weight: 600;
+}
+
+.field input {
+  font: inherit;
+  padding: 0.5rem 0.625rem;
+  border: 1px solid var(--muted);
+  border-radius: 0.375rem;
+  background: var(--surface);
+  color: var(--text);
+}
+
+.field input[aria-invalid='true'] {
+  border: 2px solid var(--danger);
+}
+
+.hint {
+  margin: 0;
+  font-size: 0.875rem;
+  color: var(--muted);
+}
+
+.field-error {
+  margin: 0;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--danger);
+}
+
+.button {
+  font: inherit;
+  font-weight: 600;
+  padding: 0.5rem 1rem;
+  border-radius: 0.375rem;
+  border: 1px solid var(--primary);
+  background: var(--surface);
+  color: var(--primary);
+  cursor: pointer;
+}
+
+.button:hover {
+  background: #eff6ff;
+}
+
+.button.primary {
+  background: var(--primary);
+  color: #ffffff;
+}
+
+.button.primary:hover {
+  background: var(--primary-hover);
+}
+
+.button.danger {
+  border-color: var(--danger);
+  background: var(--surface);
+  color: var(--danger);
+}
+
+.button.danger:hover {
+  background: #fef2f2;
+  color: var(--danger-hover);
+}
+
+.button:disabled {
+  cursor: not-allowed;
+  opacity: 0.7;
+}
+
+:focus-visible {
+  outline: 3px solid var(--focus);
+  outline-offset: 2px;
+}
+
+.messages {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.75rem;
+}
+
+.message {
+  border-top: 1px solid var(--border);
+  padding-top: 0.75rem;
+}
+
+.message-header {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: baseline;
+}
+
+.message-header time {
+  font-size: 0.875rem;
+  color: var(--muted);
+}
+
+.message-text {
+  margin: 0.25rem 0 0.5rem;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.live-regions p {
+  margin: 0;
+}
+
+.status:not(:empty),
+.alert:not(:empty) {
+  padding: 0.75rem 1rem;
+  border-radius: 0.375rem;
+  font-weight: 600;
+}
+
+.status:not(:empty) {
+  background: #dcfce7;
+  color: var(--success);
+}
+
+.alert:not(:empty) {
+  background: #fee2e2;
+  color: var(--danger-hover);
+}
+
+.footer {
+  margin-top: 2rem;
+  font-size: 0.875rem;
+  text-align: center;
+}
+
+.footer p {
+  margin: 0.25rem 0;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .button {
+    transition: background-color 0.15s ease-in-out;
+  }
+}

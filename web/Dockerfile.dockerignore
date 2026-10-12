@@ -1,0 +1,21 @@
+# Build context of web/Dockerfile is the repository root: allow only what the web image needs.
+*
+!package.json
+!package-lock.json
+!.npmrc
+!api/package.json
+!web/package.json
+!web/index.html
+!web/vite.config.ts
+!web/tsconfig.json
+!web/src/
+!web/nginx/
+**/node_modules
+**/dist
+**/coverage
+**/.env*
+web/src/test
+**/*.test.ts
+**/*.test.tsx
+# Credentials file of google-github-actions/auth (deploy-gcp workflow), wherever it lands
+**/gha-creds-*.json

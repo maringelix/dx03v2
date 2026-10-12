@@ -1,0 +1,113 @@
+# Local stack (project dx03v2-dev): PostgreSQL 17 -> migrate -> api -> web on 127.0.0.1 only.
+#   scripts/dev-env.sh                                  # writes .env with random secrets (once)
+#   docker compose -p dx03v2-dev up -d --build --wait
+#   docker compose -p dx03v2-dev down -v                # removes containers, network and volume
+# Required variables come from .env (never committed; .env.example lists them).
+name: dx03v2-dev
+
+x-api-env: &api-env
+  APP_ENV: local
+  LOG_LEVEL: info
+  TRUST_PROXY_HOPS: '1'
+  DB_HOST: db
+  DB_PORT: '5432'
+  DB_NAME: ${DB_NAME:?set DB_NAME in .env (run scripts/dev-env.sh)}
+  DB_USER: ${DB_USER:?set DB_USER in .env (run scripts/dev-env.sh)}
+  DB_PASSWORD: ${DB_PASSWORD:?set DB_PASSWORD in .env (run scripts/dev-env.sh)}
+  DB_SSL_MODE: disable
+  RATE_LIMIT_WRITE_PER_MINUTE: ${RATE_LIMIT_WRITE_PER_MINUTE:-10}
+  ADMIN_TOKEN: ${ADMIN_TOKEN:?set ADMIN_TOKEN in .env (run scripts/dev-env.sh)}
+
+x-hardening: &hardening
+  read_only: true
+  cap_drop: [ALL]
+  security_opt: ['no-new-privileges:true']
+
+# Same image for migrate and api (the second build is a cache hit).
+x-api-build: &api-build
+  context: .
+  dockerfile: api/Dockerfile
+  args:
+    GIT_SHA: ${GIT_SHA:-unknown}
+
+services:
+  db:
+    # postgres:17-alpine (verified 2026-10-10)
+    image: postgres:17-alpine@sha256:b0f9560a2de083e2cc7382e75f808c7381a32852a7ec49117deedb300e552b24
+    environment:
+      POSTGRES_DB: ${DB_NAME:?set DB_NAME in .env (run scripts/dev-env.sh)}
+      POSTGRES_USER: ${DB_USER:?set DB_USER in .env (run scripts/dev-env.sh)}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?set DB_PASSWORD in .env (run scripts/dev-env.sh)}
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -h 127.0.0.1 -U "$${POSTGRES_USER}" -d "$${POSTGRES_DB}"']
+      interval: 2s
+      timeout: 3s
+      retries: 30
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    networks: [backend]
+    security_opt: ['no-new-privileges:true']
+
+  migrate:
+    image: dx03v2-api:local
+    build: *api-build
+    command: ['dist/migrate.js']
+    environment: *api-env
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: 'no'
+    networks: [backend]
+    <<: *hardening
+
+  api:
+    image: dx03v2-api:local
+    build: *api-build
+    command: ['dist/server.js']
+    environment: *api-env
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      # distroless: no shell or curl, so the probe is a one-line Node script
+      test:
+        [
+          'CMD',
+          '/nodejs/bin/node',
+          '-e',
+          "fetch('http://127.0.0.1:3000/readyz').then((r) => process.exit(r.ok ? 0 : 1), () => process.exit(1))",
+        ]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+    networks: [backend, frontend]
+    <<: *hardening
+
+  web:
+    image: dx03v2-web:local
+    build:
+      context: .
+      dockerfile: web/Dockerfile
+      args:
+        GIT_SHA: ${GIT_SHA:-unknown}
+    ports:
+      - 127.0.0.1:${WEB_PORT:-8080}:8080
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: ['CMD', 'wget', '-q', '-O', '/dev/null', 'http://127.0.0.1:8080/healthz']
+      interval: 3s
+      timeout: 3s
+      retries: 20
+    tmpfs:
+      - /tmp
+    networks: [frontend]
+    <<: *hardening
+
+networks:
+  backend:
+  frontend:
+
+volumes:
+  db-data:

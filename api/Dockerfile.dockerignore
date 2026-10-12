@@ -1,0 +1,18 @@
+# Build context of api/Dockerfile is the repository root: allow only what the API image needs.
+*
+!package.json
+!package-lock.json
+!.npmrc
+!api/package.json
+!api/tsconfig.json
+!api/tsconfig.build.json
+!api/src/
+!api/migrations/
+!web/package.json
+**/node_modules
+**/dist
+**/coverage
+**/.env*
+**/*.test.ts
+# Credentials file of google-github-actions/auth (deploy-gcp workflow), wherever it lands
+**/gha-creds-*.json

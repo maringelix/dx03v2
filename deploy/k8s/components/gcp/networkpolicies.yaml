@@ -1,0 +1,84 @@
+# Google Cloud edges on top of the base policies (enforced by GKE Dataplane V2, always on in
+# Autopilot). The global external Application Load Balancer reaches the pods directly through zonal
+# network endpoint groups, from the Google Front End and health check ranges (Parameter Manager key
+# lb-source-ranges, fixed in contract v1: 35.191.0.0/16 and 130.211.0.0/22), and the API reaches
+# Cloud SQL only through its Private Service Connect endpoint (key db/endpoint-ip). Both come from
+# deploy-params: the documentation addresses below are placeholders replaced at render time.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: web-ingress-from-lb
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: web
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - ipBlock:
+            cidr: 192.0.2.0/24
+        - ipBlock:
+            cidr: 198.51.100.0/24
+      ports:
+        - protocol: TCP
+          port: 8080
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: api-ingress-from-lb
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: api
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - ipBlock:
+            cidr: 192.0.2.0/24
+        - ipBlock:
+            cidr: 198.51.100.0/24
+      ports:
+        - protocol: TCP
+          port: 3000
+---
+# Only the endpoint address (/32) and the PostgreSQL port: the API and its migrate initContainer
+# never reach anything else of the VPC.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: api-egress-to-cloudsql
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: api
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - ipBlock:
+            cidr: 192.0.2.1/32
+      ports:
+        - protocol: TCP
+          port: 5432
+---
+# Autopilot resolves names through NodeLocal DNSCache with Cloud DNS: pods use the name server
+# 169.254.20.10 (GKE doc "Setting up NodeLocal DNSCache", section "NodeLocal DNSCache with Cloud
+# DNS", checked 2026-10-12). The same doc says that with Cloud DNS or GKE Dataplane V2, both always
+# on in Autopilot, no extra NetworkPolicy rule is required; this one keeps the DNS path explicit
+# instead of depending on that, and opens only port 53 of that one link-local address.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-node-dns-cache-egress
+spec:
+  podSelector: {}
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - ipBlock:
+            cidr: 169.254.20.10/32
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53

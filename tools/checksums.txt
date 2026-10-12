@@ -1,0 +1,27 @@
+# SHA256 of every harness tool artifact: <sha256>  <tool>  <version>  <os>_<arch>
+# Taken from the upstream checksum file of each exact release (shellcheck has none:
+# computed from the downloaded artifacts). Regenerate with scripts/update-tool-checksums.sh.
+c6e65abddb348e25f10549df887045629cf28cc72453cd1c63acb717316b3f3f  trivy  0.75.0  linux_amd64
+a1ee9f6ffb7d112b64ff726a2a0717c21175c1114361391f4a132956751a13b3  trivy  0.75.0  linux_arm64
+4a77108cccf8e55c8d6823e1e759939a622277e66cd0daa3c1fc621ed69e4568  trivy  0.75.0  darwin_arm64
+c7187db94eeeeca956519a6af171adc31453941a1e777961f6e680f697c8c507  hadolint  2.15.1  linux_amd64
+f6198ef8090f404dbb771abfee086eb8c48ac177f30da7fd3510aca35b344b5d  hadolint  2.15.1  linux_arm64
+5c09f3213f8e40406abe048233d985eebef336d4a6a20021be47fadb6cf480a2  hadolint  2.15.1  darwin_arm64
+8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8  actionlint  1.7.12  linux_amd64
+325e971b6ba9bfa504672e29be93c24981eeb1c07576d730e9f7c8805afff0c6  actionlint  1.7.12  linux_arm64
+aba9ced2dee8d27fecca3dc7feb1a7f9a52caefa1eb46f3271ea66b6e0e6953f  actionlint  1.7.12  darwin_arm64
+8c3be12b05d5c177a04c29e3c78ce89ac86f1595681cab149b65b97c4e227198  shellcheck  0.11.0  linux_amd64
+12b331c1d2db6b9eb13cfca64306b1b157a86eb69db83023e261eaa7e7c14588  shellcheck  0.11.0  linux_arm64
+56affdd8de5527894dca6dc3d7e0a99a873b0f004d7aabc30ae407d3f48b0a79  shellcheck  0.11.0  darwin_arm64
+9bc2bffbf71f261128533edaf912153948b7ff238f9a531ae6d34466ec287883  kubeconform  0.8.0  linux_amd64
+1f53fc8e81258197a35e8603054162a5af1de8c5af13746c71ab680d9534ed87  kubeconform  0.8.0  linux_arm64
+f84f4dfbebf4a6b0b230385fa065a39ea35e02608c2b50d025dcf64775a69d67  kubeconform  0.8.0  darwin_arm64
+551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb  gitleaks  8.30.1  linux_amd64
+e4a487ee7ccd7d3a7f7ec08657610aa3606637dab924210b3aee62570fb4b080  gitleaks  8.30.1  linux_arm64
+b40ab0ae55c505963e365f271a8d3846efbc170aa17f2607f13df610a9aeb6a5  gitleaks  8.30.1  darwin_arm64
+aee6151561422756b764a4ae28e7f44cda5af5a9eead3cc9985112b1de8d8e0d  kind  0.33.0  linux_amd64
+20022bee6cfcd5086cb7234d218e3454e6090022f2a8f55d1fa7fcf42c3867a2  kind  0.33.0  linux_arm64
+0c8c7dbe5e23594a198b786c4bc13dacc101fa6196b0cb0b23a1ca44e61f4b4f  kind  0.33.0  darwin_arm64
+33bc88a24c3b09cf55bfd59e6ca977881b61fc3f25ab65bc80c65b430248648e  kubectl  1.36.5  linux_amd64
+88fc1aca8fd0c1b44fe379f67c39bd6858bdfc50241dc55775f84d0f5b31da3a  kubectl  1.36.5  linux_arm64
+c5850a4a6b9469b26cce47c1ab456285f58e308283dcdf72b4ddda3db49b0ec0  kubectl  1.36.5  darwin_arm64

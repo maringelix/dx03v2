@@ -1,0 +1,11 @@
+# The Pod Security labels of the namespace tx03v2 creates on GKE (contract v1: enforce restricted,
+# version latest), plus the matching warn labels.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: dx03v2
+  labels:
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/enforce-version: latest
+    pod-security.kubernetes.io/warn: restricted
+    pod-security.kubernetes.io/warn-version: latest

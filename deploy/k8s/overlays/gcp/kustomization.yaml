@@ -1,0 +1,10 @@
+# GKE Autopilot lab cluster of tx03v2 without Cloud Armor (Parameter Manager key
+# waf/security-policy is `none`). Rendered and applied by scripts/deploy-gcp.sh from a temporary
+# copy that contains components/gcp/params.env.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: dx03v2
+resources:
+  - ../../base
+components:
+  - ../../components/gcp

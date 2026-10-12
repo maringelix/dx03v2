@@ -1,0 +1,80 @@
+# Monthly dependency PRs: minor + patch grouped per ecosystem, majors one by one.
+# Review procedure: AGENTS.md (Dependency updater) and docs/SUSTENTACAO.md.
+# Harness tools (tools/), the postgres:17-alpine and kind node digests (compose.yaml, ci.yml,
+# deploy/k8s, scripts/harness.sh, kind/kind-config.yaml) and the devcontainer are updated by hand
+# in the quarterly routine: they must change together (check version-consistency).
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: monthly
+    open-pull-requests-limit: 5
+    labels:
+      - dependencies
+    groups:
+      npm-minor-patch:
+        update-types:
+          - minor
+          - patch
+    ignore:
+      # @types/node follows the Node.js major of .nvmrc (24), not the latest Node.js release.
+      - dependency-name: '@types/node'
+        update-types:
+          - version-update:semver-major
+      # typescript-eslint 8.71 accepts typescript >=4.8.4 <6.1.0: a minor or major bump of
+      # typescript fails npm ci (ERESOLVE) and would block the whole minor/patch group. Patches
+      # still arrive; widen this by hand when typescript-eslint supports the new range
+      # (docs/SUSTENTACAO.md, section 4, quarterly review).
+      - dependency-name: typescript
+        update-types:
+          - version-update:semver-minor
+          - version-update:semver-major
+
+  - package-ecosystem: docker
+    directories:
+      - /api
+      - /web
+    schedule:
+      interval: monthly
+    open-pull-requests-limit: 5
+    labels:
+      - dependencies
+    groups:
+      docker-minor-patch:
+        update-types:
+          - minor
+          - patch
+    ignore:
+      # The web image follows the nginx stable line (even minor, 1.30 now). A minor bump would move
+      # it to the mainline (odd, 1.31); patch and digest updates of the stable line still arrive.
+      # The next stable line (1.32, ~April 2027) is adopted by hand (docs/SUSTENTACAO.md, section 4).
+      - dependency-name: nginxinc/nginx-unprivileged
+        update-types:
+          - version-update:semver-minor
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    open-pull-requests-limit: 5
+    labels:
+      - dependencies
+    groups:
+      github-actions-minor-patch:
+        update-types:
+          - minor
+          - patch
+
+  - package-ecosystem: pre-commit
+    directory: /
+    schedule:
+      interval: monthly
+    open-pull-requests-limit: 5
+    labels:
+      - dependencies
+    groups:
+      pre-commit-minor-patch:
+        update-types:
+          - minor
+          - patch

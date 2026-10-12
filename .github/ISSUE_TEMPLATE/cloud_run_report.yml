@@ -1,0 +1,80 @@
+name: Cloud run report
+description: I deployed this app in my own Google Cloud project (with tx03v2). Share what happened so the status matrix stays honest.
+title: 'cloud run: <date> <region>'
+labels:
+  - cloud-run
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Follow docs/RUNBOOK.md (and the tx03v2 runbook for the infrastructure). Redact project IDs
+        (use `tx03v2-lab-example`), project numbers (`000000000000`), service account and user
+        e-mails, IP addresses and the Cloud SQL DNS name. A report counts as evidence only with the
+        commit SHAs, the smoke test output and the leftover check result.
+  - type: input
+    id: date
+    attributes:
+      label: Date (UTC)
+      placeholder: '2026-10-12'
+    validations:
+      required: true
+  - type: input
+    id: region
+    attributes:
+      label: Google Cloud region
+      placeholder: us-central1
+    validations:
+      required: true
+  - type: textarea
+    id: versions
+    attributes:
+      label: Versions and commit
+      description: dx03v2 and tx03v2 commit SHAs, GKE version, Google Cloud SDK version, image tags, overlay (gcp or gcp-waf).
+    validations:
+      required: true
+  - type: checkboxes
+    id: steps
+    attributes:
+      label: Steps executed
+      options:
+        - label: tx03v2 bootstrap, apply and platform (see the tx03v2 report)
+        - label: GitHub variables of dx03v2 (GCP_PROJECT_ID, GCP_WORKLOAD_IDENTITY_PROVIDER, GCP_DEPLOY_SERVICE_ACCOUNT)
+        - label: deploy-gcp workflow (or scripts/deploy-gcp.sh from a laptop)
+        - label: images pushed to Artifact Registry (dx03v2/api, dx03v2/web)
+        - label: ExternalSecrets synced, rollouts complete
+        - label: Gateway programmed on the contract address (and the GCPBackendPolicies attached, with Cloud Armor)
+        - label: smoke test through the load balancer passed
+        - label: tx03v2 destroy + leftover check
+  - type: input
+    id: duration
+    attributes:
+      label: Total duration (deploy to destroy)
+      placeholder: 1h10m
+    validations:
+      required: true
+  - type: input
+    id: cost
+    attributes:
+      label: Observed cost (Cloud Billing reports, in your billing currency)
+      placeholder: 'USD 1.50'
+    validations:
+      required: true
+  - type: textarea
+    id: smoke
+    attributes:
+      label: Smoke test output
+      description: PASS/FAIL lines printed by e2e/smoke.mjs (no tokens are printed).
+    validations:
+      required: true
+  - type: textarea
+    id: problems
+    attributes:
+      label: Problems and workarounds
+      description: Errors, retries, manual fixes (redacted logs welcome).
+  - type: textarea
+    id: leftovers
+    attributes:
+      label: Leftovers after destroy
+      description: Output of the tx03v2 leftover check (redacted) and anything you had to delete by hand.
+    validations:
+      required: true

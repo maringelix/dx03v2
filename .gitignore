@@ -1,0 +1,30 @@
+# Node.js dependencies, build output and test reports
+node_modules/
+dist/
+coverage/
+*.tsbuildinfo
+.vite/
+.eslintcache
+npm-debug.log*
+
+# Harness tools and scratch data
+.tools/
+.cache/
+
+# Local credentials and deploy parameters (generated at runtime; the examples are committed)
+.env
+.env.*
+!.env.example
+deploy/k8s/components/gcp/params.env
+# Credentials file that google-github-actions/auth writes into the workspace (deploy-gcp workflow)
+gha-creds-*.json
+*.pem
+*.key
+kubeconfig
+.kube/
+
+# Editor and OS noise
+.DS_Store
+.idea/
+.vscode/
+*.swp

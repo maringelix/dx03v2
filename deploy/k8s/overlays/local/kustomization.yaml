@@ -1,0 +1,47 @@
+# kind (scripts/e2e-kind.sh): namespace with PSA restricted, throwaway PostgreSQL, images built
+# locally and loaded with `kind load docker-image` (never pulled). The Secrets db-credentials and
+# app-secrets are created by the e2e script with random values; they are not in git.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: dx03v2
+resources:
+  - namespace.yaml
+  - ../../base
+  - postgres.yaml
+  - networkpolicy-postgres.yaml
+images:
+  - name: dx03v2-api
+    newTag: e2e
+  - name: dx03v2-web
+    newTag: e2e
+patches:
+  - target:
+      kind: ConfigMap
+      name: app-config
+    patch: |-
+      - op: add
+        path: /data/APP_ENV
+        value: kind
+      - op: add
+        path: /data/DB_SSL_MODE
+        value: disable
+      - op: replace
+        path: /data/TRUST_PROXY_HOPS
+        value: '1'
+  - target:
+      kind: Deployment
+      name: api
+    patch: |-
+      - op: add
+        path: /spec/template/spec/initContainers/0/imagePullPolicy
+        value: Never
+      - op: add
+        path: /spec/template/spec/containers/0/imagePullPolicy
+        value: Never
+  - target:
+      kind: Deployment
+      name: web
+    patch: |-
+      - op: add
+        path: /spec/template/spec/containers/0/imagePullPolicy
+        value: Never

@@ -1,0 +1,17 @@
+# Non-secret API settings (api/src/config.ts). Each overlay adds APP_ENV and the DB TLS settings.
+# Secrets come from db-credentials (DB_HOST, DB_PORT, DB_NAME, DB_USER, DB_PASSWORD) and
+# app-secrets (ADMIN_TOKEN): contract v1, docs/CONTRATO.md.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: app-config
+data:
+  PORT: '3000'
+  METRICS_PORT: '9464'
+  # One reverse proxy in front of the API: web nginx (local, kind). The gcp overlays set 2: the
+  # Google Cloud load balancer appends the client and its own address to X-Forwarded-For.
+  TRUST_PROXY_HOPS: '1'
+  LOG_LEVEL: info
+  DB_POOL_MAX: '10'
+  RATE_LIMIT_WRITE_PER_MINUTE: '10'
+  SHUTDOWN_TIMEOUT_MS: '10000'
