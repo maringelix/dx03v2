@@ -6,6 +6,13 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- The CI (`static`, `test`, `images`, `e2e`) ran green on GitHub: the README status matrix now says
+  `verified in CI` for the rows backed by a CI job (compose stays `verified locally`).
+- Dependabot ignores major bumps of the `node` build image (it follows `.nvmrc` and `engines.node`;
+  `node:26` failed `npm ci` with EBADENGINE).
+
 ### Added
 
 - First version: the dx01v2 app retargeted to GKE Autopilot (the cluster of `tx03v2`, contract v1,

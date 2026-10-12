@@ -13,9 +13,8 @@ plataforma) é do `tx03v2`, com a sustentação descrita lá.
 
 ## 2. Estado atual
 
-- Estágios `static`, `test`, `build` e `e2e` `verificado localmente` em containers Linux
-  (`HARNESS_STRICT=1`); o CI (jobs `static`, `test`, `images` e `e2e`) ainda não rodou no GitHub. O
-  primeiro CI verde vira `verificado no CI` num PR.
+- Estágios `static`, `test`, `build` e `e2e` `verificado no CI` (jobs `static`, `test`, `images` e
+  `e2e`) e localmente em containers Linux (`HARNESS_STRICT=1`).
 - Deploy no Google Cloud: `não executado em nuvem (v2)`; `scripts/deploy-gcp.sh` foi exercitado só
   com `gcloud`/`kubectl`/`docker` simulados (13 cenários, `docs/HARNESS.md`).
 - Contrato com o tx03v2: versão 1 (`docs/CONTRATO.md`), espelho da parte do app do

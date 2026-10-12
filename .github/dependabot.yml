@@ -46,6 +46,13 @@ updates:
           - minor
           - patch
     ignore:
+      # The node build image follows the Node.js major of .nvmrc and engines.node (24): a major bump
+      # (e.g. node:26) fails npm ci with EBADENGINE. Minor, patch and digest updates still arrive;
+      # the next major is adopted by hand with .nvmrc, engines and the distroless runtime
+      # (docs/SUSTENTACAO.md, section 5.3).
+      - dependency-name: node
+        update-types:
+          - version-update:semver-major
       # The web image follows the nginx stable line (even minor, 1.30 now). A minor bump would move
       # it to the mainline (odd, 1.31); patch and digest updates of the stable line still arrive.
       # The next stable line (1.32, ~April 2027) is adopted by hand (docs/SUSTENTACAO.md, section 4).
