@@ -21,7 +21,7 @@ is the source of truth. The full rule list (pt-BR) is [docs/GUARDRAILS.md](docs/
 - The app also has an overlay and a GitOps deploy for the full local platform of tx03v2 (kind, Istio
   ambient, Argo CD, Prometheus, Loki, Gatekeeper, Trivy Operator, chaos): overlay `local-platform`,
   `scripts/deploy-local.sh` and `make e2e-platform` (CI job `e2e-platform`,
-  [docs/LAB_LOCAL.md](docs/LAB_LOCAL.md)); the platform e2e is `verified locally` (13 probes). It is not
+  [docs/LAB_LOCAL.md](docs/LAB_LOCAL.md)); the platform e2e is `verified in CI` (13 probes; also locally). It is not
   cloud-mutating: agents may run it, one heavy run at a time (Docker with 8 GB).
 - The interface with `tx03v2` is [docs/CONTRATO.md](docs/CONTRATO.md) (contract v1, owned by tx03v2; the
   local lab has its own local contract, `lab-system/lab-contract`).

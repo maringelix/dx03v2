@@ -7,8 +7,8 @@ emulador da API do S3), load balancer e servidor git emulados (`docs/LAB_LOCAL.m
 repositório faz o deploy do app nela do jeito GitOps e prova o comportamento com sondas. Nada aqui fala
 com o Google Cloud.
 
-Status: `verificado localmente` (rodada do zero em 2026-10-13 na plataforma local do tx03v2: 13 sondas,
-lab destruído sem sobras); roda também no job `e2e-platform` do CI.
+Status: `verificado no CI` (job `e2e-platform`, 13 sondas) e `verificado localmente` (rodada do zero em
+2026-10-13 na plataforma local do tx03v2, lab destruído sem sobras).
 
 ## Como rodar
 
