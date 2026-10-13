@@ -1,0 +1,112 @@
+# The local lab of tx03v2 (docs/CONTRATO.md of tx03v2, "Lab local"): the full v1 platform on kind.
+# Namespace-scoped resources only: the namespace, the ClusterSecretStore local-secrets, the AppProject
+# and the CA ConfigMap lab-ca belong to tx03v2 (scripts/deploy-local.sh copies lab-ca here). Values
+# read from the cluster at deploy time (image names, lab network, database address) arrive through
+# params.env (written by scripts/deploy-local.sh into a temporary copy; params.example.env is what CI
+# renders). Argo CD applies the rendered result from the GitOps repository of the lab git server.
+apiVersion: kustomize.config.k8s.io/v1alpha1
+kind: Component
+resources:
+  - gateway.yaml
+  - externalsecrets.yaml
+  - hpa.yaml
+  - mesh.yaml
+  - networkpolicies.yaml
+  - monitoring.yaml
+configMapGenerator:
+  - name: deploy-params
+    envs:
+      - params.env
+    options:
+      disableNameSuffixHash: true
+      annotations:
+        config.kubernetes.io/local-config: 'true'
+  # Grafana loads every ConfigMap labelled grafana_dashboard=1 (sidecar of kube-prometheus-stack).
+  - name: dx03v2-dashboard
+    files:
+      - dashboard-dx03v2.json
+    options:
+      disableNameSuffixHash: true
+      labels:
+        grafana_dashboard: '1'
+patches:
+  - target:
+      kind: ConfigMap
+      name: app-config
+    patch: |-
+      - op: add
+        path: /data/APP_ENV
+        value: lab
+      - op: add
+        path: /data/DB_SSL_MODE
+        value: verify-full
+      - op: add
+        path: /data/DB_SSL_CA_FILE
+        value: /etc/lab-ca/ca.crt
+  # The HPA owns the replica count (2-4).
+  - target:
+      kind: Deployment
+      name: api
+    patch: |-
+      - op: remove
+        path: /spec/replicas
+      - op: add
+        path: /spec/template/spec/volumes
+        value:
+          - name: lab-ca
+            configMap:
+              name: lab-ca
+      - op: add
+        path: /spec/template/spec/initContainers/0/volumeMounts
+        value:
+          - name: lab-ca
+            mountPath: /etc/lab-ca
+            readOnly: true
+      - op: add
+        path: /spec/template/spec/containers/0/volumeMounts
+        value:
+          - name: lab-ca
+            mountPath: /etc/lab-ca
+            readOnly: true
+replacements:
+  - source:
+      kind: ConfigMap
+      name: deploy-params
+      fieldPath: data.API_IMAGE
+    targets:
+      - select:
+          kind: Deployment
+          name: api
+        fieldPaths:
+          - spec.template.spec.initContainers.[name=migrate].image
+          - spec.template.spec.containers.[name=api].image
+  - source:
+      kind: ConfigMap
+      name: deploy-params
+      fieldPath: data.WEB_IMAGE
+    targets:
+      - select:
+          kind: Deployment
+          name: web
+        fieldPaths:
+          - spec.template.spec.containers.[name=web].image
+  - source:
+      kind: ConfigMap
+      name: deploy-params
+      fieldPath: data.NETWORK_CIDR
+    targets:
+      - select:
+          kind: NetworkPolicy
+          name: gateway-ingress-from-load-balancer
+        fieldPaths:
+          - spec.ingress.0.from.0.ipBlock.cidr
+  - source:
+      kind: ConfigMap
+      name: deploy-params
+      fieldPath: data.DB_ENDPOINT_CIDR
+    targets:
+      - select:
+          kind: NetworkPolicy
+          name: api-egress-to-db
+        fieldPaths:
+          - spec.egress.0.to.0.ipBlock.cidr

@@ -47,6 +47,10 @@ The lab family (v2):
 | kind end-to-end: Pod Security `restricted`, smoke test through nginx, NetworkPolicy enforcement | `verified in CI` | `make e2e` (`scripts/e2e-kind.sh`); CI job `e2e` |
 | Google Cloud deploy (Artifact Registry push, GKE Autopilot of tx03v2, ExternalSecrets from Secret Manager, GKE Gateway + Cloud Armor, smoke test through the load balancer) | `not run in the cloud (v2)` | `.github/workflows/deploy-gcp.yml`, `scripts/deploy-gcp.sh`, `docs/RUNBOOK.md` |
 | HTTPS on the Gateway listener | `planned` | needs a certificate; outside contract v1 (`docs/CONTRATO.md`) |
+| Overlay `local-platform` for the tx03v2 local lab: kustomize render + kubeconform strict, assertions against the local contract and the kinds of the AppProject `dx03v2`, five alert rules tested with promtool | `verified in CI` | `make static` (`kubeconform`, `contract-app`, `promtool-rules`) in a Linux container; CI job `static` |
+| **The app on the full local platform of tx03v2** (kind + emulated Artifact Registry, Cloud SQL, object storage, load balancer, git server): images to the lab registry, GitOps with Argo CD (Synced, Healthy, self-heal) | `verified in CI` | `make e2e-platform` (`scripts/deploy-local.sh`, `scripts/e2e-platform.sh`, `docs/LAB_LOCAL.md`); CI job `e2e-platform` |
+| HTTPS through the emulated load balancer and an Istio Gateway (cert-manager, lab CA), smoke test from outside the mesh (`SMOKE_EDGE=istio`); database TLS `verify-full` | `verified in CI` | `make e2e-platform` (probe `smoke`) |
+| Istio ambient: mTLS `STRICT`, `AuthorizationPolicy` by identity, NetworkPolicies with HBONE; Prometheus, Grafana dashboard, Loki; Gatekeeper, Trivy Operator, HPA 2-4; database backup + restore drill; chaos experiment | `verified in CI` | `make e2e-platform` (probes `mesh`, `observability`, `trivy`, `hpa`, `backup`, `chaos`) |
 | Repository settings as code (ruleset, environment `lab`) | `planned` | `scripts/repo-guardrails.sh`, `docs/PUBLICACAO.md` |
 
 `verified in CI` rows run in the CI jobs of the Evidence column (`HARNESS_STRICT=1`, on every pull
@@ -126,12 +130,13 @@ through the load balancer → tx03v2 destroy + leftover check → `cloud_run_rep
 | Target | What it runs | When |
 |---|---|---|
 | `make help` | lists the targets | any time |
-| `make tools` | `scripts/install-tools.sh`: trivy 0.75.0, hadolint 2.15.1, actionlint 1.7.12, shellcheck 0.11.0, kubeconform 0.8.0, gitleaks 8.30.1, kind 0.33.0, kubectl 1.36.5 | once, and after a tool bump |
+| `make tools` | `scripts/install-tools.sh`: trivy 0.75.0, hadolint 2.15.1, actionlint 1.7.12, shellcheck 0.11.0, kubeconform 0.8.0, gitleaks 8.30.1, kind 0.33.0, kubectl 1.36.5, promtool 3.15.0 | once, and after a tool bump |
 | `make static` | `scripts/harness.sh static` | before every push |
 | `make test` | `scripts/harness.sh test` (real PostgreSQL 17: `DB_*` or a throwaway container) | before every push |
 | `make verify` | static + test | before every PR |
 | `make build` | `scripts/harness.sh build`: npm build, images, image policy, trivy gate | when code, Dockerfiles or dependencies change |
 | `make e2e` | `scripts/harness.sh e2e`: kind cluster, smoke test, NetworkPolicy probes | when manifests, images or the app change |
+| `make e2e-platform` | `scripts/harness.sh platform`: the app on the full tx03v2 local platform (clones tx03v2 at `deploy/local/tx03v2.ref`), always torn down (CI job `e2e-platform`) | manifest, image or app changes; needs Docker with 8 GB |
 | `make all` | every stage | before a release-like merge |
 | `make clean` | removes `.tools/`, build output, coverage, `node_modules` and scratch data | — |
 
@@ -149,6 +154,7 @@ All docs are in Brazilian Portuguese.
 | [docs/API.md](docs/API.md) | endpoints, errors, curl examples |
 | [docs/CONTRATO.md](docs/CONTRATO.md) | tx03v2 ⇄ dx03v2 contract v1 (app side; source of truth in tx03v2) |
 | [docs/RUNBOOK.md](docs/RUNBOOK.md) | local development, compose, kind e2e, Google Cloud deploy |
+| [docs/LAB_LOCAL.md](docs/LAB_LOCAL.md) | the app on the tx03v2 local platform (GitOps deploy, probes, limits) |
 | [docs/GUARDRAILS.md](docs/GUARDRAILS.md) | rules, enforcement, exceptions, limits |
 | [docs/HARNESS.md](docs/HARNESS.md) | checks, strict mode, the offline deploy test, troubleshooting |
 | [docs/SUSTENTACAO.md](docs/SUSTENTACAO.md) | routines, end-of-support calendar, update procedures, parity with dx01v2 and dx02v2 |

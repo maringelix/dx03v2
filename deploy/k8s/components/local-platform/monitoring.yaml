@@ -1,0 +1,63 @@
+# Observability of the app on the local platform: Prometheus scrapes the metrics port of the API
+# (prom-client: http_request_duration_seconds by method, route and status_code) and evaluates the
+# alerts below; Alertmanager delivers them to the alert sink of tx03v2. v1 paid for Prometheus and
+# Alertmanager with no proven alert (docs/LICOES_APRENDIDAS.md of tx03v2, lesson 5): every rule here uses a
+# series the API or kube-state-metrics exports, and the harness tests them with promtool (check promtool-rules).
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: api
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: api
+  endpoints:
+    - port: metrics
+      path: /metrics
+      interval: 30s
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: dx03v2
+spec:
+  groups:
+    - name: dx03v2
+      rules:
+        - alert: Dx03v2ApiDown
+          expr: absent(up{namespace="dx03v2", service="api"} == 1)
+          for: 2m
+          labels:
+            severity: critical
+          annotations:
+            summary: No API pod of dx03v2 is being scraped successfully
+        - alert: Dx03v2HighErrorRate
+          expr: |
+            sum(rate(http_request_duration_seconds_count{namespace="dx03v2", status_code=~"5.."}[5m]))
+              / sum(rate(http_request_duration_seconds_count{namespace="dx03v2"}[5m])) > 0.05
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: More than 5% of the API responses are 5xx
+        - alert: Dx03v2HighLatencyP95
+          expr: |
+            histogram_quantile(0.95, sum by (le) (rate(http_request_duration_seconds_bucket{namespace="dx03v2"}[5m]))) > 1
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: The API p95 latency is above 1 second
+        - alert: Dx03v2PodRestarting
+          expr: increase(kube_pod_container_status_restarts_total{namespace="dx03v2"}[15m]) > 2
+          labels:
+            severity: warning
+          annotations:
+            summary: A container of dx03v2 restarted more than twice in 15 minutes
+        - alert: Dx03v2PodNotReady
+          expr: sum by (pod) (kube_pod_status_ready{namespace="dx03v2", condition="true"}) == 0
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: A pod of dx03v2 has not been ready for 5 minutes

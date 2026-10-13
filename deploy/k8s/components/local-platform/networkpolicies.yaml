@@ -1,0 +1,165 @@
+# Edges of the local lab on top of the zero-trust base. In the ambient mesh, pod-to-pod traffic travels
+# as HBONE on port 15008 of the destination pod (ztunnel), and kubelet probes arrive from the
+# link-local address 169.254.7.127 (https://istio.io/latest/docs/ambient/usage/networkpolicy/): both
+# have to be allowed next to the application ports. The Gateway pods (created by Istio for the Gateway
+# dx03v2) are not in the mesh themselves; they send HBONE to the app pods.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: gateway-ingress-from-load-balancer
+spec:
+  podSelector:
+    matchLabels:
+      gateway.networking.k8s.io/gateway-name: dx03v2
+  policyTypes: [Ingress]
+  ingress:
+    # The load balancer emulator and the kubelet reach the Gateway from the lab network (NETWORK_CIDR).
+    - from:
+        - ipBlock:
+            cidr: 10.252.0.0/24
+      ports:
+        - protocol: TCP
+          port: 80
+        - protocol: TCP
+          port: 443
+        - protocol: TCP
+          port: 15021
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: gateway-egress
+spec:
+  podSelector:
+    matchLabels:
+      gateway.networking.k8s.io/gateway-name: dx03v2
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: api
+      ports:
+        - protocol: TCP
+          port: 3000
+        - protocol: TCP
+          port: 15008
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: web
+      ports:
+        - protocol: TCP
+          port: 8080
+        - protocol: TCP
+          port: 15008
+    # Configuration (xDS) and certificates from istiod.
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: istio-system
+          podSelector:
+            matchLabels:
+              app: istiod
+      ports:
+        - protocol: TCP
+          port: 15012
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: api-ingress-mesh
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: api
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: web
+        - podSelector:
+            matchLabels:
+              gateway.networking.k8s.io/gateway-name: dx03v2
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: monitoring
+      ports:
+        - protocol: TCP
+          port: 15008
+    - from:
+        - podSelector:
+            matchLabels:
+              gateway.networking.k8s.io/gateway-name: dx03v2
+      ports:
+        - protocol: TCP
+          port: 3000
+    - from:
+        - ipBlock:
+            cidr: 169.254.7.127/32
+      ports:
+        - protocol: TCP
+          port: 3000
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: web-ingress-mesh
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: web
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              gateway.networking.k8s.io/gateway-name: dx03v2
+      ports:
+        - protocol: TCP
+          port: 8080
+        - protocol: TCP
+          port: 15008
+    - from:
+        - ipBlock:
+            cidr: 169.254.7.127/32
+      ports:
+        - protocol: TCP
+          port: 8080
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: web-egress-mesh
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: web
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: api
+      ports:
+        - protocol: TCP
+          port: 15008
+---
+# The database of the local lab (the local twin of the Cloud SQL Private Service Connect endpoint), on the lab network.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: api-egress-to-db
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: api
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - ipBlock:
+            cidr: 10.252.0.11/32
+      ports:
+        - protocol: TCP
+          port: 5432

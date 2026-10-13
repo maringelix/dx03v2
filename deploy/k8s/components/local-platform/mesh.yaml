@@ -1,0 +1,56 @@
+# Istio ambient (the namespace dx03v2 is in the mesh, label set by tx03v2): mTLS STRICT between every
+# pod and identity-based L4 authorization enforced by ztunnel. v1 had Istio installed but idle (docs/LICOES_APRENDIDAS.md
+# of tx03v2, lesson 5); here the entry is the mesh Gateway and the e2e proves both.
+apiVersion: security.istio.io/v1
+kind: PeerAuthentication
+metadata:
+  name: default
+spec:
+  mtls:
+    mode: STRICT
+---
+# api: the Gateway and web on 3000, Prometheus on the metrics port 9464. Nothing else.
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: api
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: api
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            principals:
+              - cluster.local/ns/dx03v2/sa/web
+              - cluster.local/ns/dx03v2/sa/dx03v2-istio
+      to:
+        - operation:
+            ports: ['3000']
+    - from:
+        - source:
+            principals:
+              - cluster.local/ns/monitoring/sa/kube-prometheus-stack-prometheus
+      to:
+        - operation:
+            ports: ['9464']
+---
+# web: only the Gateway.
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: web
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: web
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            principals:
+              - cluster.local/ns/dx03v2/sa/dx03v2-istio
+      to:
+        - operation:
+            ports: ['8080']

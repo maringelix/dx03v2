@@ -18,7 +18,13 @@ is the source of truth. The full rule list (pt-BR) is [docs/GUARDRAILS.md](docs/
   (jobs `static`, `test`, `images`, `e2e`).
   `scripts/deploy-gcp.sh` was exercised offline with stub `gcloud`/`kubectl`/`docker` only.
   **Nothing of v2 has run in Google Cloud** (`deploy-gcp` is `not run in the cloud (v2)`).
-- The interface with `tx03v2` is [docs/CONTRATO.md](docs/CONTRATO.md) (contract v1, owned by tx03v2).
+- The app also has an overlay and a GitOps deploy for the full local platform of tx03v2 (kind, Istio
+  ambient, Argo CD, Prometheus, Loki, Gatekeeper, Trivy Operator, chaos): overlay `local-platform`,
+  `scripts/deploy-local.sh` and `make e2e-platform` (CI job `e2e-platform`,
+  [docs/LAB_LOCAL.md](docs/LAB_LOCAL.md)); the platform e2e is `verified in CI` (13 probes; also locally). It is not
+  cloud-mutating: agents may run it, one heavy run at a time (Docker with 8 GB).
+- The interface with `tx03v2` is [docs/CONTRATO.md](docs/CONTRATO.md) (contract v1, owned by tx03v2; the
+  local lab has its own local contract, `lab-system/lab-contract`).
 
 ## 2. Non-negotiable rules
 
@@ -26,8 +32,9 @@ is the source of truth. The full rule list (pt-BR) is [docs/GUARDRAILS.md](docs/
    real project, workload identity provider names, the real name suffix, hostnames, public IPs,
    e-mails). Use `tx03v2-lab-example`, `000000000000`, the suffix `00000000`,
    `<name>@tx03v2-lab-example.iam.gserviceaccount.com`, `you@example.com` and `203.0.113.10`. The
-   only public addresses allowed are the load balancer ranges `35.191.0.0/16` and `130.211.0.0/22`
-   and the node DNS cache `169.254.20.10` (`policy-identifiers` checks every file). Local
+   only public addresses allowed are the load balancer ranges `35.191.0.0/16` and `130.211.0.0/22`,
+   the node DNS cache `169.254.20.10` and the Istio ambient probe address `169.254.7.127` of the local
+   platform (`policy-identifiers` checks every file). Local
    credentials are generated at runtime (`scripts/dev-env.sh`, `scripts/e2e-kind.sh`).
 2. Never run cloud-mutating actions (`scripts/deploy-gcp.sh`, `kubectl`/`helm` against a cloud
    cluster, `gcloud` write commands, dispatching `deploy-gcp`) unless a human explicitly asks for
@@ -51,27 +58,31 @@ is the source of truth. The full rule list (pt-BR) is [docs/GUARDRAILS.md](docs/
 ```text
 api/                    Express 5 API (src/, migrations/*.sql, test/unit, test/integration, Dockerfile)
 web/                    React 19 page (src/, nginx/default.conf + security-headers.conf, Dockerfile)
-e2e/                    smoke.mjs + lib.mjs: the smoke test for compose, kind and the GKE Gateway
+e2e/                    smoke.mjs + lib.mjs: the smoke test for compose, kind, the GKE Gateway and the local platform
 deploy/k8s/base/        Deployments, Services, ConfigMap, PDBs, NetworkPolicies, ServiceAccounts
-deploy/k8s/overlays/    local (kind: namespace, PostgreSQL), gcp, gcp-waf (GKE Autopilot of tx03v2)
+deploy/k8s/overlays/    local (kind: namespace, PostgreSQL), gcp, gcp-waf (GKE Autopilot of tx03v2), local-platform
 deploy/k8s/components/  gcp (Gateway, HTTPRoute, HealthCheckPolicies, ExternalSecrets, HPA, load
-                        balancer / Cloud SQL / node DNS policies, params) and gcp-waf (GCPBackendPolicies)
+                        balancer / Cloud SQL / node DNS policies, params), gcp-waf (GCPBackendPolicies) and
+                        local-platform (Istio Gateway, mesh policies, ExternalSecrets, HPA, monitoring, params)
 deploy/k8s/schemas/     kubeconform schemas: Gateway API from the release asset, networking.gke.io
                         from a pinned catalog commit (scripts/update-crd-schemas.sh, never by hand)
 kind/                   kind-config.yaml (node image pinned by digest)
 compose.yaml            local stack dx03v2-dev; .env from scripts/dev-env.sh (.env.example has placeholders)
-scripts/harness.sh      every check of the harness (stages static, test, build, e2e, all, list)
+scripts/harness.sh      every check of the harness (stages static, test, build, e2e, platform, all, list)
 scripts/install-tools.sh            pinned tools into .tools/ (SHA256-verified)
 scripts/update-tool-checksums.sh    bump a tool: versions.env + checksums.txt from upstream checksums
 scripts/update-crd-schemas.sh       regenerate or check deploy/k8s/schemas (crd-to-jsonschema.mjs converts)
 scripts/e2e-kind.sh     kind e2e (cluster dx03v2-e2e); scripts/compose-smoke.sh, scripts/dev-env.sh
 scripts/deploy-gcp.sh   Google Cloud deploy (cloud-mutating; used by .github/workflows/deploy-gcp.yml)
+scripts/deploy-local.sh GitOps deploy to the tx03v2 local lab (registry, GitOps repository, Argo CD)
+scripts/e2e-platform.sh the app on the full local platform + probes (stage platform)
+deploy/local/           tx03v2.ref: the tx03v2 commit the platform e2e uses
 scripts/render-k8s.sh   render an overlay without touching the repo; check-manifests.mjs asserts the contract
 scripts/check-build-context.mjs     proves that every Docker build context leaves gha-creds-*.json out
 scripts/repo-guardrails.sh          repository settings via gh api (run by the maintainer)
 scripts/lib/            shared bash helpers (common, tools, k8s)
 tools/                  versions.env and checksums.txt of the harness tools
-.github/                ci.yml (static, test, images, e2e), deploy-gcp.yml, ruleset, templates, Dependabot
+.github/                ci.yml (static, test, images, e2e, e2e-platform), deploy-gcp.yml, ruleset, templates, Dependabot
 .devcontainer/          Node.js 24 + Docker-in-Docker, pinned by digest (runs make tools)
 docs/                   pt-BR docs: architecture, API, contract, runbook, guardrails, harness, sustainment
 ```
@@ -93,17 +104,18 @@ docs/                   pt-BR docs: architecture, API, contract, runbook, guardr
 | Command | Runs | When |
 |---|---|---|
 | `make tools` | `scripts/install-tools.sh` (all pinned tools) | first time, after a tool bump |
-| `make static` | `scripts/harness.sh static`: policies, npm ci, eslint, prettier, tsc, hadolint, actionlint, shellcheck, CRD schemas, kubeconform, contract, trivy config, gitleaks | every change |
+| `make static` | `scripts/harness.sh static`: policies, npm ci, eslint, prettier, tsc, hadolint, actionlint, shellcheck, CRD schemas, kubeconform, contract, promtool rules, trivy config, gitleaks | every change |
 | `make test` | `scripts/harness.sh test`: API unit + integration (real PostgreSQL), web tests, coverage gates | every code change |
 | `HARNESS_STRICT=1 make verify` | static + test with SKIP = FAIL (CI jobs `static` and `test`) | before every PR |
 | `make build` | npm build, both images, image policy, trivy image gate (CI job `images`) | code, Dockerfile or dependency changes |
 | `make e2e` | kind cluster, smoke test, Pod Security and NetworkPolicy probes (CI job `e2e`) | manifest, image or app changes |
+| `make e2e-platform` | the app on the full tx03v2 local platform through GitOps + probes (CI job `e2e-platform`) | manifest, image or app changes |
 | `scripts/harness.sh list` | lists all checks | any time |
 
 ## 6. Definition of Done
 
 - [ ] `HARNESS_STRICT=1 make verify` green locally (plus `make build` and `make e2e` when images,
-      manifests or the app changed); CI green (`static`, `test`, `images`, `e2e`).
+      manifests or the app changed); CI green (`static`, `test`, `images`, `e2e`, `e2e-platform`).
 - [ ] Docs, README status matrix and `CHANGELOG.md` (`[Unreleased]`) updated in the same PR.
 - [ ] No new unexplained scanner ignores; no weakened checks or coverage thresholds.
 - [ ] Contract respected (or bumped with a linked `tx03v2` PR); app changes ported to `dx01v2` and

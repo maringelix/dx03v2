@@ -1,6 +1,7 @@
 // Structural checks of the rendered Kubernetes manifests against contract v1 (docs/CONTRATO.md)
 // and the hardening rules of docs/GUARDRAILS.md. Used by the harness check `contract-app`.
-//   node scripts/check-manifests.mjs --params <params.env> local=<file> gcp=<file> gcp-waf=<file>
+//   node scripts/check-manifests.mjs --params <params.env> --local-params <params.env> local=<file> gcp=<file>
+//     gcp-waf=<file> local-platform=<file>
 import { readFileSync } from 'node:fs';
 import { parseAllDocuments } from 'yaml';
 
@@ -88,19 +89,28 @@ const eq = (actual, expected, message) =>
 function parseArgs(argv) {
   const files = {};
   let params;
+  let localParams;
   for (let i = 0; i < argv.length; i++) {
     if (argv[i] === '--params') {
       params = argv[++i];
+    } else if (argv[i] === '--local-params') {
+      localParams = argv[++i];
     } else {
       const [name, file] = argv[i].split('=');
       files[name] = file;
     }
   }
   if (params === undefined || Object.keys(files).length === 0) {
-    console.error('usage: node scripts/check-manifests.mjs --params <params.env> <overlay>=<rendered.yaml>...');
+    console.error(
+      'usage: node scripts/check-manifests.mjs --params <params.env> [--local-params <params.env>] <overlay>=<rendered.yaml>...',
+    );
     process.exit(2);
   }
-  return { params: readParams(params), files };
+  return {
+    params: readParams(params),
+    files,
+    localParams: localParams === undefined ? undefined : readParams(localParams),
+  };
 }
 
 function readParams(file) {
@@ -554,7 +564,173 @@ function gcpChecks(overlay, { objs }, params, waf) {
   }
 }
 
-const { params, files } = parseArgs(process.argv.slice(2));
+// Kinds the AppProject dx03v2 of the tx03v2 local lab lets Argo CD sync (local contract,
+// platform/local/manifests/argocd-project-dx03v2.yaml of tx03v2).
+const APPPROJECT_KINDS = new Set([
+  'AuthorizationPolicy',
+  'ConfigMap',
+  'Deployment',
+  'ExternalSecret',
+  'Gateway',
+  'HTTPRoute',
+  'HorizontalPodAutoscaler',
+  'NetworkPolicy',
+  'PeerAuthentication',
+  'PodDisruptionBudget',
+  'PrometheusRule',
+  'Service',
+  'ServiceAccount',
+  'ServiceMonitor',
+]);
+
+function localPlatformChecks({ objs }, params) {
+  const overlay = 'local-platform';
+  for (const o of objs) {
+    check(APPPROJECT_KINDS.has(o.kind), `${overlay}: ${o.kind} is outside what the AppProject dx03v2 may sync`);
+  }
+  const config = find(objs, 'ConfigMap', 'app-config')?.data ?? {};
+  // One proxy hop in front of the API: the Envoy of the Istio Gateway (the load balancer emulator
+  // in front of it is a TCP proxy and adds no X-Forwarded-For entry).
+  eq(
+    [config.APP_ENV, config.DB_SSL_MODE, config.DB_SSL_CA_FILE, config.TRUST_PROXY_HOPS],
+    ['lab', 'verify-full', '/etc/lab-ca/ca.crt', '1'],
+    `${overlay}: app-config`,
+  );
+  const api = find(objs, 'Deployment', 'api');
+  const pod = api?.spec?.template?.spec ?? {};
+  check(api?.spec?.replicas === undefined, `${overlay}: api replicas must be left to the HPA`);
+  eq(pod.volumes, [{ name: 'lab-ca', configMap: { name: 'lab-ca' } }], `${overlay}: lab-ca volume`);
+  for (const c of [...(pod.initContainers ?? []), ...(pod.containers ?? [])]) {
+    eq(
+      c.volumeMounts,
+      [{ name: 'lab-ca', mountPath: '/etc/lab-ca', readOnly: true }],
+      `${overlay}: ${c.name} mounts lab-ca`,
+    );
+    eq(c.image, params.API_IMAGE, `${overlay}: ${c.name} image from params`);
+  }
+  eq(
+    find(objs, 'Deployment', 'web')?.spec?.template?.spec?.containers?.[0]?.image,
+    params.WEB_IMAGE,
+    `${overlay}: web image from params`,
+  );
+
+  eq(
+    all(objs, 'Gateway').map((g) => g.metadata?.name),
+    ['dx03v2'],
+    `${overlay}: exactly one Gateway`,
+  );
+  const gw = find(objs, 'Gateway', 'dx03v2');
+  eq(gw?.spec?.gatewayClassName, 'istio', `${overlay}: Gateway class`);
+  eq(gw?.metadata?.annotations?.['cert-manager.io/cluster-issuer'], 'lab-ca', `${overlay}: Gateway issuer`);
+  eq(
+    (gw?.spec?.listeners ?? []).map((l) => [l.name, l.protocol, l.port, l.hostname, l.tls?.certificateRefs?.[0]?.name]),
+    [
+      ['http', 'HTTP', 80, 'dx03v2.tx03v2.local', undefined],
+      ['https', 'HTTPS', 443, 'dx03v2.tx03v2.local', 'dx03v2-tls'],
+    ],
+    `${overlay}: Gateway listeners`,
+  );
+  const redirect = find(objs, 'HTTPRoute', 'dx03v2-redirect')?.spec;
+  eq(redirect?.parentRefs?.[0]?.sectionName, 'http', `${overlay}: redirect on the http listener`);
+  eq(
+    redirect?.rules?.[0]?.filters?.[0]?.requestRedirect,
+    { scheme: 'https', statusCode: 301 },
+    `${overlay}: HTTP -> HTTPS redirect`,
+  );
+  const route = find(objs, 'HTTPRoute', 'dx03v2')?.spec;
+  eq(route?.parentRefs?.[0]?.sectionName, 'https', `${overlay}: app routes on the https listener only`);
+  eq(
+    (route?.rules ?? []).map((r) => [r.matches?.[0]?.path?.value, r.backendRefs?.[0]?.name, r.backendRefs?.[0]?.port]),
+    [
+      ['/api', 'api', 3000],
+      ['/', 'web', 8080],
+    ],
+    `${overlay}: HTTPRoute rules (the same as on the GKE Gateway)`,
+  );
+
+  const db = find(objs, 'ExternalSecret', 'db-credentials')?.spec;
+  eq(db?.secretStoreRef, { kind: 'ClusterSecretStore', name: 'local-secrets' }, `${overlay}: db-credentials store`);
+  eq(
+    (db?.data ?? []).map((d) => [d.secretKey, d.remoteRef?.key, d.remoteRef?.property]),
+    [
+      ['DB_HOST', 'tx03v2-lab-db-app', 'host'],
+      ['DB_PORT', 'tx03v2-lab-db-app', 'port'],
+      ['DB_NAME', 'tx03v2-lab-db-app', 'dbname'],
+      ['DB_USER', 'tx03v2-lab-db-app', 'username'],
+      ['DB_PASSWORD', 'tx03v2-lab-db-app', 'password'],
+    ],
+    `${overlay}: db-credentials mapping`,
+  );
+  const app = find(objs, 'ExternalSecret', 'app-secrets')?.spec;
+  eq(app?.secretStoreRef, { kind: 'ClusterSecretStore', name: 'local-secrets' }, `${overlay}: app-secrets store`);
+  // Secret Manager holds the admin token as a plain string; the local twin keeps it under the key token.
+  eq(
+    (app?.data ?? []).map((d) => [d.secretKey, d.remoteRef?.key, d.remoteRef?.property]),
+    [['ADMIN_TOKEN', 'tx03v2-lab-app-admin-token', 'token']],
+    `${overlay}: app-secrets mapping`,
+  );
+
+  eq(find(objs, 'PeerAuthentication', 'default')?.spec?.mtls?.mode, 'STRICT', `${overlay}: mTLS STRICT`);
+  const principals = (name) =>
+    (find(objs, 'AuthorizationPolicy', name)?.spec?.rules ?? []).map((r) => [
+      r.from?.[0]?.source?.principals,
+      r.to?.[0]?.operation?.ports,
+    ]);
+  eq(
+    principals('api'),
+    [
+      [['cluster.local/ns/dx03v2/sa/web', 'cluster.local/ns/dx03v2/sa/dx03v2-istio'], ['3000']],
+      [['cluster.local/ns/monitoring/sa/kube-prometheus-stack-prometheus'], ['9464']],
+    ],
+    `${overlay}: AuthorizationPolicy api`,
+  );
+  eq(
+    principals('web'),
+    [[['cluster.local/ns/dx03v2/sa/dx03v2-istio'], ['8080']]],
+    `${overlay}: AuthorizationPolicy web`,
+  );
+
+  eq(
+    find(objs, 'NetworkPolicy', 'gateway-ingress-from-load-balancer')?.spec?.ingress?.[0]?.from?.[0]?.ipBlock?.cidr,
+    params.NETWORK_CIDR,
+    `${overlay}: Gateway ingress only from the lab network`,
+  );
+  eq(
+    find(objs, 'NetworkPolicy', 'api-egress-to-db')?.spec?.egress?.[0],
+    { to: [{ ipBlock: { cidr: params.DB_ENDPOINT_CIDR } }], ports: [{ protocol: 'TCP', port: 5432 }] },
+    `${overlay}: api -> database only`,
+  );
+  for (const name of ['api-ingress-mesh', 'web-ingress-mesh']) {
+    const rules = find(objs, 'NetworkPolicy', name)?.spec?.ingress ?? [];
+    check(
+      rules.some((r) => (r.ports ?? []).some((p) => p.port === 15008)),
+      `${overlay}: ${name} must allow HBONE (15008)`,
+    );
+    check(
+      rules.some((r) => r.from?.[0]?.ipBlock?.cidr === '169.254.7.127/32'),
+      `${overlay}: ${name} must allow the ambient kubelet probes (169.254.7.127/32)`,
+    );
+  }
+  eq(
+    find(objs, 'ServiceMonitor', 'api')?.spec?.endpoints?.[0]?.port,
+    'metrics',
+    `${overlay}: ServiceMonitor scrapes the metrics port`,
+  );
+  eq(
+    (find(objs, 'PrometheusRule', 'dx03v2')?.spec?.groups?.[0]?.rules ?? []).map((r) => r.alert),
+    ['Dx03v2ApiDown', 'Dx03v2HighErrorRate', 'Dx03v2HighLatencyP95', 'Dx03v2PodRestarting', 'Dx03v2PodNotReady'],
+    `${overlay}: alert rules`,
+  );
+  eq(
+    find(objs, 'ConfigMap', 'dx03v2-dashboard')?.metadata?.labels?.grafana_dashboard,
+    '1',
+    `${overlay}: dashboard ConfigMap for the Grafana sidecar`,
+  );
+  const hpa = find(objs, 'HorizontalPodAutoscaler', 'api')?.spec;
+  eq([hpa?.minReplicas, hpa?.maxReplicas], [2, 4], `${overlay}: HPA`);
+}
+
+const { params, files, localParams } = parseArgs(process.argv.slice(2));
 const rendered = {};
 for (const [overlay, file] of Object.entries(files)) {
   rendered[overlay] = load(file);
@@ -563,6 +739,11 @@ for (const [overlay, file] of Object.entries(files)) {
     localChecks(rendered[overlay]);
   } else if (overlay === 'gcp' || overlay === 'gcp-waf') {
     gcpChecks(overlay, rendered[overlay], params, overlay === 'gcp-waf');
+  } else if (overlay === 'local-platform') {
+    check(localParams !== undefined, 'local-platform needs --local-params');
+    if (localParams !== undefined) {
+      localPlatformChecks(rendered[overlay], localParams);
+    }
   } else {
     failures.push(`unknown overlay ${overlay}`);
   }

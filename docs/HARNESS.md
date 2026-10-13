@@ -9,7 +9,7 @@ localmente em containers Linux.
 
 | Camada | Comando | O que prova | O que NÃO prova | Onde roda |
 |---|---|---|---|---|
-| Ferramentas | `make tools` | binários nas versões de `tools/versions.env` (trivy, hadolint, actionlint, shellcheck, kubeconform, gitleaks, kind, kubectl), SHA256 conferido | — | local, CI |
+| Ferramentas | `make tools` | binários nas versões de `tools/versions.env` (trivy, hadolint, actionlint, shellcheck, kubeconform, gitleaks, kind, kubectl, promtool), SHA256 conferido | — | local, CI |
 | Versões | `tool-versions`, `version-consistency` | PATH com as versões fixadas (estrito); Node.js, PostgreSQL e Kubernetes coerentes entre arquivos; versões npm exatas | — | local, CI |
 | Estrutura e honestidade | `repo-structure` | arquivos obrigatórios, rótulos de status, LF, UTF-8 sem BOM (nada de UTF-16), README <= 250 linhas, bit executável dos scripts no índice do git | que a documentação está certa | local, CI |
 | Políticas | `policy-identifiers`, `policy-workflows`, `policy-images`, `policy-app`, `policy-cloud`, `trivyignore-policy` | só identificadores placeholder (`tx03v2-lab-example`, `000000000000`, e-mails de exemplo, GUID zerado) e só endereços privados, de documentação, as duas faixas do load balancer e o cache DNS do nó; actions e imagens fixadas; workflow de deploy só manual, Workload Identity Federation sem chaves, `auth` e `setup-gcloud` fixados, gcloud com versão, `gke-gcloud-auth-plugin`, kubectl do `install-tools.sh`; `gha-creds-*.json` fora do git e de todo contexto de build; regressões do v1 (trust proxy, CORS, estilos inline, HSTS, `console.*`); nada dos caminhos das outras nuvens; ignores com validade | intenção de quem escreveu | local, CI |
@@ -17,7 +17,7 @@ localmente em containers Linux.
 | Lint, formato e tipos | `eslint`, `prettier`, `typecheck:api`, `typecheck:web` | regras type-aware do typescript-eslint, React hooks, formatação, TypeScript estrito | comportamento | local, CI |
 | Dockerfiles, workflows e scripts | `hadolint`, `actionlint` (com shellcheck), `shellcheck` | boas práticas de Dockerfile, YAML e bash corretos (nível style) | comportamento contra a nuvem | local, CI |
 | Schemas dos CRDs | `crd-schemas` | `deploy/k8s/schemas` é exatamente o que `scripts/update-crd-schemas.sh` gera das entradas de `source.env` (asset `standard-install.yaml` da Gateway API v1.5.0 e os dois schemas `networking.gke.io` do catálogo no commit `f3e4382`, SHA-256 conferido em cada download) | que a GKE serve a mesma versão no cluster do tx03v2 | local, CI (rede) |
-| Manifests | `kubeconform`, `contract-app`, `trivy-config` | overlays `local`, `gcp` e `gcp-waf` renderizados e válidos (estrito, Kubernetes 1.36, Gateway API v1.5.0 standard, `networking.gke.io/v1`, `ExternalSecret`); asserções do contrato v1 e de hardening (`scripts/check-manifests.mjs`); 10 parâmetros ruins recusados por `k8s_validate_params`; no `scripts/deploy-gcp.sh`: as 15 chaves, o nome do parâmetro, os valores fixos (iguais aos de `externalsecrets.yaml` e `params.example.env`), um único SHA-256 fixado (a raiz do Cloud SQL), a URL do bundle, os dois overlays e a limpeza das GCPBackendPolicies, `--dns-endpoint`, token pelo stdin, máscaras, `gcloud` só nas chamadas de leitura permitidas, nada de `docker push`/`--password`/`:latest`; sem HIGH/CRITICAL de configuração | admission e comportamento no cluster (ver e2e), o controlador de Gateway de verdade | local, CI (rede) |
+| Manifests | `kubeconform`, `contract-app`, `promtool-rules`, `trivy-config` | overlays `local`, `gcp`, `gcp-waf` e `local-platform` renderizados e válidos (estrito, Kubernetes 1.36, Gateway API v1.5.0 standard, `networking.gke.io/v1`, `ExternalSecret`); asserções do contrato v1 e de hardening (`scripts/check-manifests.mjs`); 10 parâmetros ruins recusados por `k8s_validate_params`; no `scripts/deploy-gcp.sh`: as 15 chaves, o nome do parâmetro, os valores fixos (iguais aos de `externalsecrets.yaml` e `params.example.env`), um único SHA-256 fixado (a raiz do Cloud SQL), a URL do bundle, os dois overlays e a limpeza das GCPBackendPolicies, `--dns-endpoint`, token pelo stdin, máscaras, `gcloud` só nas chamadas de leitura permitidas, nada de `docker push`/`--password`/`:latest`; sem HIGH/CRITICAL de configuração | admission e comportamento no cluster (ver e2e), o controlador de Gateway de verdade | local, CI (rede) |
 | Segredos | `gitleaks` | nenhum segredo conhecido (histórico completo quando há commits) | segredos fora dos padrões do gitleaks | local, CI |
 | Testes da API | `test:api` | unitários e de integração com supertest contra o app real e um PostgreSQL 17 real: migrações idempotentes, fluxos de criar/listar/apagar, 400/401/404/413/415/429/503, XFF falso não fura o limite (formatos do nginx, sem espaço e `<cliente>,<load balancer>` com dois saltos), readyz 200/503, recuperação do banco, desligamento gracioso; cobertura >= 80 % linhas e >= 70 % branches | TLS com o Cloud SQL, várias réplicas | local, CI (Docker ou `DB_*`) |
 | Testes da página | `test:web` | lista, envio com sucesso e erro, validação, modo admin (fetch simulado), cobertura >= 70 % linhas | navegador real, CSP aplicada pelo navegador | local, CI |
@@ -58,9 +58,13 @@ nuvem.
 | `test` | `make test` (service `postgres:17-alpine` por digest, `DB_*` no ambiente) | `test` |
 | `images` | build com buildx + cache do GitHub Actions, depois `make tools && make build` com `IMAGES_PREBUILT=1`; as duas imagens viram um artefato | `build` |
 | `e2e` | carrega o artefato, `bash scripts/install-tools.sh kind kubectl`, `make e2e` com `E2E_SKIP_BUILD=1`; diagnósticos como artefato em caso de falha | `e2e` |
+| `e2e-platform` | carrega o artefato, `make e2e-platform` com `E2E_SKIP_BUILD=1`: clona o tx03v2 no commit de `deploy/local/tx03v2.ref`, sobe o lab local completo, faz o deploy GitOps e roda as sondas (`docs/LAB_LOCAL.md`); log completo e diagnósticos como artefato em caso de falha | `platform` |
 
 Os ids `static`, `test`, `images` e `e2e` são estáveis: são os checks exigidos pelo ruleset
-(`.github/rulesets/main.json`); o check `policy-workflows` impede que mudem sem querer.
+(`.github/rulesets/main.json`); o check `policy-workflows` impede que mudem sem querer. O
+`e2e-platform` roda em todo PR e precisa estar verde para o merge (disciplina do mantenedor; ainda fora
+do ruleset). Checks novos: `promtool-rules` (estático: `promtool check rules` e `promtool test rules`
+das regras de alerta do overlay `local-platform`) e `platform-e2e` (estágio `platform`).
 
 ## Modo estrito
 

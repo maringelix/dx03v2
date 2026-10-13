@@ -1,0 +1,97 @@
+# promtool unit tests of the dx03v2 alert rules (harness check promtool-rules). The rule file is
+# extracted from the PrometheusRule in monitoring.yaml. Not a Kubernetes manifest (kustomize does not
+# include it).
+rule_files:
+  - dx03v2.rules.json
+evaluation_interval: 30s
+tests:
+  # The scrape target goes away, and the down alert fires after 2 minutes, not before.
+  - interval: 30s
+    input_series:
+      - series: 'up{namespace="dx03v2", service="api", pod="api-1"}'
+        values: '1 1 0 0 0 0 0 0 0 0'
+    alert_rule_test:
+      - eval_time: 1m
+        alertname: Dx03v2ApiDown
+        exp_alerts: []
+      - eval_time: 4m
+        alertname: Dx03v2ApiDown
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+            exp_annotations:
+              summary: No API pod of dx03v2 is being scraped successfully
+  # 10% of the requests are 5xx for long enough: Dx03v2HighErrorRate fires; 1% does not.
+  - interval: 1m
+    input_series:
+      - series: 'http_request_duration_seconds_count{namespace="dx03v2", status_code="200", route="/api/messages"}'
+        values: '0+90x20'
+      - series: 'http_request_duration_seconds_count{namespace="dx03v2", status_code="500", route="/api/messages"}'
+        values: '0+10x20'
+    alert_rule_test:
+      - eval_time: 15m
+        alertname: Dx03v2HighErrorRate
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+            exp_annotations:
+              summary: More than 5% of the API responses are 5xx
+  - interval: 1m
+    input_series:
+      - series: 'http_request_duration_seconds_count{namespace="dx03v2", status_code="200", route="/api/messages"}'
+        values: '0+99x20'
+      - series: 'http_request_duration_seconds_count{namespace="dx03v2", status_code="500", route="/api/messages"}'
+        values: '0+1x20'
+    alert_rule_test:
+      - eval_time: 15m
+        alertname: Dx03v2HighErrorRate
+        exp_alerts: []
+  # Every request takes between 2.5 and 5 seconds: p95 above 1 s for 10 minutes.
+  - interval: 1m
+    input_series:
+      - series: 'http_request_duration_seconds_bucket{namespace="dx03v2", le="1"}'
+        values: '0x25'
+      - series: 'http_request_duration_seconds_bucket{namespace="dx03v2", le="2.5"}'
+        values: '0x25'
+      - series: 'http_request_duration_seconds_bucket{namespace="dx03v2", le="5"}'
+        values: '0+10x25'
+      - series: 'http_request_duration_seconds_bucket{namespace="dx03v2", le="+Inf"}'
+        values: '0+10x25'
+    alert_rule_test:
+      - eval_time: 20m
+        alertname: Dx03v2HighLatencyP95
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+            exp_annotations:
+              summary: The API p95 latency is above 1 second
+  # Three restarts in 15 minutes.
+  - interval: 1m
+    input_series:
+      - series: 'kube_pod_container_status_restarts_total{namespace="dx03v2", pod="api-1", container="api"}'
+        values: '0 0 1 1 2 2 3 3 3 3'
+    alert_rule_test:
+      - eval_time: 9m
+        alertname: Dx03v2PodRestarting
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              namespace: dx03v2
+              pod: api-1
+              container: api
+            exp_annotations:
+              summary: A container of dx03v2 restarted more than twice in 15 minutes
+  # A pod that never becomes ready.
+  - interval: 1m
+    input_series:
+      - series: 'kube_pod_status_ready{namespace="dx03v2", pod="web-1", condition="true"}'
+        values: '0x10'
+    alert_rule_test:
+      - eval_time: 8m
+        alertname: Dx03v2PodNotReady
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              pod: web-1
+            exp_annotations:
+              summary: A pod of dx03v2 has not been ready for 5 minutes
