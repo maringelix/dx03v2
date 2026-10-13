@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # dx03v2 harness: every check lives here. `make` targets and every CI job only call this script.
-# Usage: scripts/harness.sh <stage>...   stages: static, test, build, e2e, all, list
+# Usage: scripts/harness.sh <stage>...   stages: static, test, build, e2e, platform, all, list
 #   HARNESS_STRICT=1   (set in CI) turns every SKIP into a FAIL
 #   HARNESS_VERBOSE=1  also prints the output of passing checks
 #   HARNESS_ONLY=<re>  runs only the checks whose name matches (local debugging; never in CI)
@@ -9,7 +9,7 @@
 #                      DB_HOST is unset, a throwaway postgres:17-alpine container is started
 #   IMAGE_TAG          tag of the images built/scanned/loaded (default: e2e)
 #   IMAGES_PREBUILT=1  stage build: check images built elsewhere (CI) instead of building them
-#   E2E_SKIP_BUILD=1, KEEP_CLUSTER=1: see scripts/e2e-kind.sh
+#   E2E_SKIP_BUILD=1, KEEP_CLUSTER=1: see scripts/e2e-kind.sh; TX03V2_DIR, KEEP_LAB=1: scripts/e2e-platform.sh
 # Prints "PASS|FAIL|SKIP <check> (<secs>s)" per check and a summary; exits 1 on any FAIL.
 set -euo pipefail
 
@@ -45,6 +45,8 @@ TRIVYIGNORE_MAX_DAYS=214
 PLACEHOLDER_PROJECT="tx03v2-lab-example"
 LB_SOURCE_RANGES="35.191.0.0/16,130.211.0.0/22"
 NODE_DNS_CACHE_IP="169.254.20.10"
+# Link-local source of the kubelet probes of Istio ambient pods (local-platform NetworkPolicies).
+AMBIENT_PROBE_IP="169.254.7.127"
 # google-github-actions/auth writes this credentials file into the workspace of the deploy-gcp job.
 GHA_CREDS_FILE="gha-creds-0123456789abcdef.json"
 # Contract v1 as read by the deploy: the Parameter Manager parameter of tx03v2, its exact key set
@@ -151,6 +153,7 @@ installed_version() {
     gitleaks) out="$(gitleaks version 2>/dev/null)" || out="" ;;
     kind) out="$(kind version 2>/dev/null)" || out="" ;;
     kubectl) out="$(kubectl version --client 2>/dev/null)" || out="" ;;
+    promtool) out="$(promtool --version 2>/dev/null)" || out="" ;;
   esac
   [[ "$out" =~ ([0-9]+\.[0-9]+\.[0-9]+) ]] && printf '%s' "${BASH_REMATCH[1]}"
   return 0
@@ -351,12 +354,13 @@ check_policy_identifiers() {
     rc=1
   }
   # Addresses with their prefix length, so that the public ones are allowed only as the exact
-  # contract ranges (35.191.0.0/16, 130.211.0.0/22) and the NodeLocal DNSCache address.
+  # contract ranges (35.191.0.0/16, 130.211.0.0/22), the NodeLocal DNSCache address and the link-local
+  # address Istio ambient uses for kubelet probes (a fixed Istio value, not an identifier).
   out="$(grep -noP '(?<![0-9.])(?:[0-9]{1,3}\.){3}[0-9]{1,3}(?:/[0-9]{1,2})?(?![0-9]|\.[0-9])' "${files[@]}" |
-    grep -vP ':(10\.|127\.|172\.(1[6-9]|2[0-9]|3[01])\.|192\.168\.|192\.0\.2\.|198\.51\.100\.|203\.0\.113\.|0\.0\.0\.0|35\.191\.0\.0/16$|130\.211\.0\.0/22$|169\.254\.20\.10(/32)?$)')" || true
+    grep -vP ':(10\.|127\.|172\.(1[6-9]|2[0-9]|3[01])\.|192\.168\.|192\.0\.2\.|198\.51\.100\.|203\.0\.113\.|0\.0\.0\.0|35\.191\.0\.0/16$|130\.211\.0\.0/22$|169\.254\.20\.10(/32)?$|169\.254\.7\.127(/32)?$)')" || true
   [[ -z "$out" ]] || {
-    printf 'IP addresses must be private or documentation ranges (RFC 1918 / RFC 5737), the load balancer ranges %s or %s:\n%s\n' \
-      "$LB_SOURCE_RANGES" "$NODE_DNS_CACHE_IP" "$out"
+    printf 'IP addresses must be private or documentation ranges (RFC 1918 / RFC 5737), the load balancer ranges %s, %s or %s:\n%s\n' \
+      "$LB_SOURCE_RANGES" "$NODE_DNS_CACHE_IP" "$AMBIENT_PROBE_IP" "$out"
     rc=1
   }
   # GUIDs are never identifiers of this lab: only the all-zero placeholder, plus the UUID test
@@ -735,8 +739,9 @@ check_contract_app() {
   need kubectl node
   [[ -d node_modules ]] || skip "node_modules is missing (check npm-ci)"
   render_overlays "$dir"
-  node scripts/check-manifests.mjs --params "$K8S_PARAMS_EXAMPLE" \
-    local="$dir/local.yaml" gcp="$dir/gcp.yaml" gcp-waf="$dir/gcp-waf.yaml" || rc=1
+  node scripts/check-manifests.mjs --params "$K8S_PARAMS_EXAMPLE" --local-params "$K8S_LOCAL_PARAMS_EXAMPLE" \
+    local="$dir/local.yaml" gcp="$dir/gcp.yaml" gcp-waf="$dir/gcp-waf.yaml" \
+    local-platform="$dir/local-platform.yaml" || rc=1
   # scripts/deploy-gcp.sh writes params.env from the contract parameter: a widened range, a public
   # or malformed address, an unknown or a missing key (-KEY) never reach the manifests.
   for bad in "${bad_values[@]}" -DB_ENDPOINT_IP; do
@@ -1047,8 +1052,32 @@ check_kind_e2e() {
   bash scripts/e2e-kind.sh
 }
 
-register_checks() {
-  register static tool-versions check_tool_versions
+check_platform_e2e() {
+  need kubectl node git ssh
+  need_docker
+  bash scripts/e2e-platform.sh
+}
+
+# The alert rules of the local-platform component, tested with promtool (series the API exports and
+# kube-state-metrics; docs/HARNESS.md).
+check_promtool_rules() {
+  local dir="$HARNESS_WORK_DIR/promtool"
+  need promtool node
+  [[ -d node_modules ]] || skip "node_modules is missing (check npm-ci)"
+  mkdir -p "$dir"
+  node -e '
+    const { parse } = require("yaml");
+    const fs = require("fs");
+    const docs = fs.readFileSync(process.argv[1], "utf8").split(/^---$/m).map((d) => parse(d));
+    const rule = docs.find((d) => d && d.kind === "PrometheusRule");
+    fs.writeFileSync(process.argv[2], JSON.stringify({ groups: rule.spec.groups }, null, 2));
+  ' deploy/k8s/components/local-platform/monitoring.yaml "$dir/dx03v2.rules.json"
+  cp deploy/k8s/components/local-platform/alerts-test.yaml "$dir/alerts-test.yaml"
+  promtool check rules "$dir/dx03v2.rules.json"
+  (cd "$dir" && promtool test rules alerts-test.yaml)
+}
+
+register_checks() {  register static tool-versions check_tool_versions
   register static repo-structure check_repo_structure
   register static version-consistency check_version_consistency
   register static policy-identifiers check_policy_identifiers
@@ -1068,6 +1097,7 @@ register_checks() {
   register static crd-schemas check_crd_schemas
   register static kubeconform check_kubeconform
   register static contract-app check_contract_app
+  register static promtool-rules check_promtool_rules
   register static trivy-config check_trivy_config
   register static gitleaks check_gitleaks
   register test npm-ci check_npm_ci
@@ -1082,6 +1112,7 @@ register_checks() {
   register build trivy-image:api "check_trivy_image api"
   register build trivy-image:web "check_trivy_image web"
   register e2e kind-e2e check_kind_e2e
+  register platform platform-e2e check_platform_e2e
 }
 
 # ---------------------------------------------------------------------------------------------
@@ -1143,10 +1174,11 @@ run_check() {
 list_checks() {
   local i
   echo "stages:"
-  echo "  static  policies, npm ci, eslint, prettier, tsc, hadolint, actionlint, shellcheck, CRD schemas, kubeconform, contract, trivy config, gitleaks"
+  echo "  static  policies, npm ci, eslint, prettier, tsc, hadolint, actionlint, shellcheck, CRD schemas, kubeconform, contract, promtool rules, trivy config, gitleaks"
   echo "  test    API unit + integration tests (real PostgreSQL 17) and web tests, with coverage gates"
   echo "  build   npm build, docker images, image policy, trivy image gate (HIGH/CRITICAL, fixable)"
   echo "  e2e     kind cluster: manifests, PSA restricted, smoke test, NetworkPolicy enforcement"
+  echo "  platform the app on the full tx03v2 local platform (GitOps, mesh, observability, policies, backup, chaos)"
   echo "  all     static + test + build + e2e"
   echo "checks:"
   for i in "${!CHECK_NAME[@]}"; do
@@ -1155,7 +1187,7 @@ list_checks() {
 }
 
 usage() {
-  echo "usage: $0 <stage>...   (stages: static, test, build, e2e, all, list)" >&2
+  echo "usage: $0 <stage>...   (stages: static, test, build, e2e, platform, all, list)" >&2
   exit 2
 }
 
@@ -1167,7 +1199,7 @@ main() {
   register_checks
   for arg in "$@"; do
     case "$arg" in
-      static | test | build | e2e) stages+=("$arg") ;;
+      static | test | build | e2e | platform) stages+=("$arg") ;;
       all) stages+=(static test build e2e) ;;
       list)
         list_checks

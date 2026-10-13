@@ -1,10 +1,13 @@
 // End-to-end smoke test through the entry point: the web nginx locally and on kind, the GKE Gateway
-// (global external Application Load Balancer) on Google Cloud.
+// (global external Application Load Balancer) on Google Cloud, the Istio Gateway on the tx03v2 local
+// platform.
 //   BASE_URL=http://127.0.0.1:18080 ADMIN_TOKEN=... node e2e/smoke.mjs
 // Optional: SMOKE_WAIT_SECONDS (wait for /healthz and /api/info, plus GET retries; default 0),
 //           SMOKE_MAX_WRITES (attempts to reach the rate limit; default 60),
 //           SMOKE_EDGE (what routes /api to the API: `nginx`, the default, for compose and kind;
-//           `gke` for Google Cloud, where the HTTPRoute of the Gateway sends /api straight to the API).
+//           `gke` for Google Cloud, where the HTTPRoute of the Gateway sends /api straight to the API;
+//           `istio` for the Istio Gateway of the tx03v2 local lab, where /api goes straight to the
+//           API and an external X-Request-Id is kept, as behind nginx).
 // The rate-limit check runs last: it uses up this client's write budget for a minute.
 import { randomUUID } from 'node:crypto';
 import { assert, assertEqual, choiceEnv, http, intEnv, requiredEnv, Runner, waitForOk } from './lib.mjs';
@@ -13,7 +16,7 @@ const BASE_URL = requiredEnv('BASE_URL');
 const ADMIN_TOKEN = requiredEnv('ADMIN_TOKEN');
 const WAIT_SECONDS = intEnv('SMOKE_WAIT_SECONDS', 0);
 const MAX_WRITES = intEnv('SMOKE_MAX_WRITES', 60);
-const EDGE = choiceEnv('SMOKE_EDGE', ['nginx', 'gke']);
+const EDGE = choiceEnv('SMOKE_EDGE', ['nginx', 'gke', 'istio']);
 const RETRIES = WAIT_SECONDS > 0 ? 5 : 0;
 const HTTPS = new URL(BASE_URL).protocol === 'https:';
 
@@ -21,8 +24,8 @@ const WEB_CSP =
   "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; " +
   "object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'";
 // Behind nginx /api responses carry the web policy (nginx hides the API's own); behind the GKE
-// Gateway, which routes /api straight to the API, they carry the API's policy.
-const API_CSP = EDGE === 'gke' ? "default-src 'none';frame-ancestors 'none'" : WEB_CSP;
+// Gateway or the Istio Gateway, which route /api straight to the API, they carry the API's policy.
+const API_CSP = EDGE === 'nginx' ? WEB_CSP : "default-src 'none';frame-ancestors 'none'";
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 // What the API accepts as a request ID (api/src/middleware/request-id.ts); anything else is replaced.
 const SAFE_REQUEST_ID = /^[A-Za-z0-9-]{1,64}$/;

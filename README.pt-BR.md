@@ -48,6 +48,10 @@ A família do lab (v2):
 | Ponta a ponta no kind: Pod Security `restricted`, smoke test pelo nginx, enforcement de NetworkPolicy | `verificado no CI` | `make e2e` (`scripts/e2e-kind.sh`); job `e2e` do CI |
 | Deploy no Google Cloud (push no Artifact Registry, GKE Autopilot do tx03v2, ExternalSecrets do Secret Manager, Gateway da GKE + Cloud Armor, smoke test pelo load balancer) | `não executado em nuvem (v2)` | `.github/workflows/deploy-gcp.yml`, `scripts/deploy-gcp.sh`, `docs/RUNBOOK.md` |
 | HTTPS no listener do Gateway | `planejado` | precisa de um certificado; fora do contrato v1 (`docs/CONTRATO.md`) |
+| Overlay `local-platform` para o lab local do tx03v2: render do kustomize + kubeconform estrito, asserções contra o contrato local e os kinds do AppProject `dx03v2`, cinco regras de alerta testadas com promtool | `verificado localmente` | `make static` (`kubeconform`, `contract-app`, `promtool-rules`) num contêiner Linux; ainda não no CI |
+| **O app na plataforma local completa do tx03v2** (kind + Artifact Registry, Cloud SQL, armazenamento de objetos, load balancer e servidor git emulados): imagens no registry do lab, GitOps com Argo CD (Synced, Healthy, self-heal) | `verificado localmente` | `make e2e-platform` (`scripts/deploy-local.sh`, `scripts/e2e-platform.sh`, `docs/LAB_LOCAL.md`); job `e2e-platform` do CI |
+| HTTPS pelo load balancer emulado e um Gateway do Istio (cert-manager, CA do lab), smoke test de fora do mesh (`SMOKE_EDGE=istio`); TLS `verify-full` no banco | `verificado localmente` | `make e2e-platform` (sonda `smoke`) |
+| Istio ambient: mTLS `STRICT`, `AuthorizationPolicy` por identidade, NetworkPolicies com HBONE; Prometheus, dashboard do Grafana, Loki; Gatekeeper, Trivy Operator, HPA 2-4; ensaio de backup + restore do banco; experimento de chaos | `verificado localmente` | `make e2e-platform` (sondas `mesh`, `observability`, `trivy`, `hpa`, `backup`, `chaos`) |
 | Configurações do repositório como código (ruleset, environment `lab`) | `planejado` | `scripts/repo-guardrails.sh`, `docs/PUBLICACAO.md` |
 
 As linhas `verificado no CI` rodam nos jobs do CI da coluna Evidência (`HARNESS_STRICT=1`, em todo
@@ -128,12 +132,13 @@ GitHub do dx03v2 → workflow `deploy-gcp` (ou `scripts/deploy-gcp.sh` depois de
 | Alvo | O que roda | Quando |
 |---|---|---|
 | `make help` | lista os alvos | a qualquer momento |
-| `make tools` | `scripts/install-tools.sh`: trivy 0.75.0, hadolint 2.15.1, actionlint 1.7.12, shellcheck 0.11.0, kubeconform 0.8.0, gitleaks 8.30.1, kind 0.33.0, kubectl 1.36.5 | uma vez, e depois de atualizar uma ferramenta |
+| `make tools` | `scripts/install-tools.sh`: trivy 0.75.0, hadolint 2.15.1, actionlint 1.7.12, shellcheck 0.11.0, kubeconform 0.8.0, gitleaks 8.30.1, kind 0.33.0, kubectl 1.36.5, promtool 3.15.0 | uma vez, e depois de atualizar uma ferramenta |
 | `make static` | `scripts/harness.sh static` | antes de cada push |
 | `make test` | `scripts/harness.sh test` (PostgreSQL 17 real: `DB_*` ou um container descartável) | antes de cada push |
 | `make verify` | static + test | antes de cada PR |
 | `make build` | `scripts/harness.sh build`: build npm, imagens, política de imagem, gate do trivy | quando código, Dockerfiles ou dependências mudam |
 | `make e2e` | `scripts/harness.sh e2e`: cluster kind, smoke test, sondas de NetworkPolicy | quando manifests, imagens ou o app mudam |
+| `make e2e-platform` | `scripts/harness.sh platform`: o app na plataforma local completa do tx03v2 (clona o tx03v2 em `deploy/local/tx03v2.ref`), sempre destruída no fim (job `e2e-platform` do CI) | quando manifests, imagens ou o app mudam; precisa de Docker com 8 GB |
 | `make all` | todos os estágios | antes de um merge com cara de release |
 | `make clean` | remove `.tools/`, saída de build, cobertura, `node_modules` e dados temporários | — |
 
@@ -151,6 +156,7 @@ Toda a documentação está em português do Brasil.
 | [docs/API.md](docs/API.md) | endpoints, erros, exemplos com curl |
 | [docs/CONTRATO.md](docs/CONTRATO.md) | contrato v1 tx03v2 ⇄ dx03v2 (lado do app; fonte da verdade no tx03v2) |
 | [docs/RUNBOOK.md](docs/RUNBOOK.md) | desenvolvimento local, compose, e2e no kind, deploy no Google Cloud |
+| [docs/LAB_LOCAL.md](docs/LAB_LOCAL.md) | o app na plataforma local do tx03v2 (deploy GitOps, sondas, limites) |
 | [docs/GUARDRAILS.md](docs/GUARDRAILS.md) | regras, onde são aplicadas, exceções, limites |
 | [docs/HARNESS.md](docs/HARNESS.md) | checks, modo estrito, o teste offline do deploy, problemas comuns |
 | [docs/SUSTENTACAO.md](docs/SUSTENTACAO.md) | rotinas, calendário de fim de suporte, procedimentos, paridade com o dx01v2 e o dx02v2 |

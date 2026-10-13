@@ -153,6 +153,22 @@ GitHub Actions o projeto e o e-mail da conta de serviço. O JSON tem exatamente 
 - Cloud SQL for PostgreSQL 17 (edição Enterprise), porta 5432, só por Private Service Connect,
   `ssl_mode = ENCRYPTED_ONLY`, `server_ca_mode = GOOGLE_MANAGED_CAS_CA`.
 
+## Lab local (contrato local do tx03v2, versão 1)
+
+O deploy local (scripts/deploy-local.sh, docs/LAB_LOCAL.md) lê o ConfigMap `lab-system/lab-contract`
+da plataforma local do tx03v2 e recusa valores diferentes dos fixados no overlay `local-platform`:
+`registry` = `registry.tx03v2.local`, `db.secret-name` = `tx03v2-lab-db-app`,
+`app.admin-token-secret-name` = `tx03v2-lab-app-admin-token` (chave `token`; no Secret Manager é uma
+string pura), `eso.cluster-secret-store` = `local-secrets`, `gateway.class` = `istio`,
+`tls.cluster-issuer` = `lab-ca`, `argocd.project` = `dx03v2`, `monitoring.prometheus-service-account` =
+`monitoring/kube-prometheus-stack-prometheus`. Do contrato ele lê ainda `registry-push`
+(`localhost:5003`), `network-cidr` (`10.252.0.0/24`), `db.endpoint-ip` (`10.252.0.11`),
+`db.ca-configmap`, `gitops.push-url`, `gitops.read-url` e `gitops.push-key-secret`. O overlay só usa os
+kinds que o AppProject `dx03v2` aceita (check `contract-app`). Diferenças de borda: o Gateway local
+mantém um `X-Request-Id` externo (`SMOKE_EDGE=istio`) e tem um único salto de proxy
+(`TRUST_PROXY_HOPS=1`, contra 2 atrás do load balancer do Google). A fonte da verdade é o
+`docs/CONTRATO.md` do tx03v2.
+
 ## Mudando o contrato
 
 1. Abra PRs nos dois repositórios, com links cruzados, e incremente a versão no título dos dois
