@@ -49,6 +49,7 @@ const BASE_NETWORK_POLICIES = [
 const GCP_NETWORK_POLICIES = [
   'allow-node-dns-cache-egress',
   'api-egress-to-cloudsql',
+  'api-egress-to-collector',
   'api-ingress-from-lb',
   'web-ingress-from-lb',
 ];
