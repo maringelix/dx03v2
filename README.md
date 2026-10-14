@@ -53,7 +53,7 @@ The lab family (v2):
 | **The app on the full local platform of tx03v2** (kind + emulated Artifact Registry, Cloud SQL, object storage, load balancer, git server): images to the lab registry, GitOps with Argo CD (Synced, Healthy, self-heal) | `verified in CI` | `make e2e-platform` (`scripts/deploy-local.sh`, `scripts/e2e-platform.sh`, `docs/LAB_LOCAL.md`); CI job `e2e-platform` |
 | HTTPS through the emulated load balancer and an Istio Gateway (cert-manager, lab CA), smoke test from outside the mesh (`SMOKE_EDGE=istio`); database TLS `verify-full` | `verified in CI` | `make e2e-platform` (probe `smoke`) |
 | Istio ambient: mTLS `STRICT`, `AuthorizationPolicy` by identity, NetworkPolicies with HBONE; Prometheus, Grafana dashboard, Loki; Gatekeeper, Trivy Operator, HPA 2-4; database backup + restore drill; chaos experiment | `verified in CI` | `make e2e-platform` (probes `mesh`, `observability`, `trivy`, `hpa`, `backup`, `chaos`) |
-| Repository settings as code (ruleset, environment `lab`) | `verified locally` | `scripts/repo-guardrails.sh` applied; read back with `gh api` on 2026-10-13 (`docs/PUBLICACAO.md`) |
+| Repository settings as code (ruleset, environment `lab`) | `verified locally` | `scripts/repo-guardrails.sh` applied; read back with `gh api` on 2026-10-14 (`docs/PUBLICACAO.md`) |
 
 `verified in CI` rows run in the CI jobs of the Evidence column (`HARNESS_STRICT=1`, on every pull
 request, every push to `main` and weekly) and pass locally in Linux containers. The compose row

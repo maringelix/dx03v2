@@ -90,7 +90,7 @@ take the changes of the original, and run `scripts/repo-guardrails.sh` again whe
 | A pull request waits forever for a required check | Actions are still disabled in the fork: step 2 |
 | `repo-guardrails.sh` fails with "the workflows of this fork are not enabled yet" | step 2, then run it again |
 | `make test` cannot reach PostgreSQL | the harness starts a throwaway `postgres:17-alpine` with Docker; inside a container that uses the Docker of the host, set `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER` and `DB_PASSWORD` instead |
-| `make e2e-platform` gets killed or Docker freezes | give Docker about 8 GB of memory and run one lab at a time |
+| `make e2e-platform` gets killed or Docker freezes | give Docker about 8 GB of memory (Docker Desktop on WSL 2: `memory=8GB` under `[wsl2]` in `%UserProfile%\.wslconfig`, then `wsl --shutdown`) and run one lab at a time; with less memory, `make e2e` alone still proves the manifests on kind |
 | `TX03V2_REPO must be an https git URL` | set the variable to the https clone URL of your tx03v2 fork |
 | `commit ... of deploy/local/tx03v2.ref is not in ...` | sync your tx03v2 fork, or pin a commit of it |
 

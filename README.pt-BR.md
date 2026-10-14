@@ -54,7 +54,7 @@ A família do lab (v2):
 | **O app na plataforma local completa do tx03v2** (kind + Artifact Registry, Cloud SQL, armazenamento de objetos, load balancer e servidor git emulados): imagens no registry do lab, GitOps com Argo CD (Synced, Healthy, self-heal) | `verificado no CI` | `make e2e-platform` (`scripts/deploy-local.sh`, `scripts/e2e-platform.sh`, `docs/LAB_LOCAL.md`); job `e2e-platform` do CI |
 | HTTPS pelo load balancer emulado e um Gateway do Istio (cert-manager, CA do lab), smoke test de fora do mesh (`SMOKE_EDGE=istio`); TLS `verify-full` no banco | `verificado no CI` | `make e2e-platform` (sonda `smoke`) |
 | Istio ambient: mTLS `STRICT`, `AuthorizationPolicy` por identidade, NetworkPolicies com HBONE; Prometheus, dashboard do Grafana, Loki; Gatekeeper, Trivy Operator, HPA 2-4; ensaio de backup + restore do banco; experimento de chaos | `verificado no CI` | `make e2e-platform` (sondas `mesh`, `observability`, `trivy`, `hpa`, `backup`, `chaos`) |
-| Configurações do repositório como código (ruleset, environment `lab`) | `verificado localmente` | `scripts/repo-guardrails.sh` aplicado; conferido com `gh api` em 2026-10-13 (`docs/PUBLICACAO.md`) |
+| Configurações do repositório como código (ruleset, environment `lab`) | `verificado localmente` | `scripts/repo-guardrails.sh` aplicado; conferido com `gh api` em 2026-10-14 (`docs/PUBLICACAO.md`) |
 
 As linhas `verificado no CI` rodam nos jobs do CI da coluna Evidência (`HARNESS_STRICT=1`, em todo
 pull request, todo push na `main` e semanalmente) e passam localmente em containers Linux. A linha do

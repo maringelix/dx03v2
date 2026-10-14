@@ -11,7 +11,8 @@ All notable changes to this project are documented here. The format follows
 - `scripts/repo-guardrails.sh` also turns issues on (the issue forms) and requires approval for
   workflow runs from forks of external contributors; the reviewer of the `lab` environment is the gh
   user that runs it. It fails while the workflows of a fork are still disabled and notes a renamed
-  repository or a CODEOWNERS that names someone else (tested against a stub gh).
+  repository or a CODEOWNERS that names someone else (tested against a stub gh, then applied to the
+  original repository and read back with `gh api` on 2026-10-14).
 - The ruleset requires the CI job `e2e-platform` too (`.github/rulesets/main.json`, applied with
   `scripts/repo-guardrails.sh`): the local lab is a merge gate, not only maintainer discipline.
 - README status matrix: repository settings as code are applied (read back with `gh api` on
