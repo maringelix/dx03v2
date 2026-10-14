@@ -24,14 +24,12 @@ publicado junto.
 
 - [ ] `gh repo edit maringelix/dx03v2 --visibility public --accept-visibility-change-consequences`
 - [ ] `scripts/repo-guardrails.sh maringelix/dx03v2`: alertas de vulnerabilidade, security updates do
-      Dependabot, squash-only, `delete_branch_on_merge`, `GITHUB_TOKEN` só leitura por padrão (sem
-      aprovar PRs), ruleset `main`, secret scanning + push protection, private vulnerability
-      reporting e environment `lab` (revisor: o dono; só `main`). O script imprime o que foi
-      aplicado, pulado e o que falhou.
-- [ ] Aprovação obrigatória para workflows de PRs de forks de colaboradores externos:
-      `PUT repos/maringelix/dx03v2/actions/permissions/fork-pr-contributor-approval` com
-      `{"approval_policy":"all_external_contributors"}` (`gh api --method PUT ... --input`), ou
-      Settings > Actions > General.
+      Dependabot, squash-only, `delete_branch_on_merge`, issues, `GITHUB_TOKEN` só leitura por padrão
+      (sem aprovar PRs), ruleset `main`, secret scanning + push protection, private vulnerability
+      reporting, aprovação obrigatória para workflows de PRs de forks de colaboradores externos e
+      environment `lab` (revisor: quem roda o script; só `main`). Ele também falha enquanto o Actions
+      estiver desligado e aponta o que um fork ainda precisa trocar (`FORK.md`). O script imprime o
+      que foi aplicado, pulado, as notas e o que falhou.
 - [ ] Tabelas da família nos outros cinco repositórios v2 (os da tabela do README): trocar o nome do
       dx03v2 por um link, um PR em cada.
 

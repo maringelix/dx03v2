@@ -79,12 +79,13 @@ scripts/e2e-platform.sh the app on the full local platform + probes (stage platf
 deploy/local/           tx03v2.ref: the tx03v2 commit the platform e2e uses
 scripts/render-k8s.sh   render an overlay without touching the repo; check-manifests.mjs asserts the contract
 scripts/check-build-context.mjs     proves that every Docker build context leaves gha-creds-*.json out
-scripts/repo-guardrails.sh          repository settings via gh api (run by the maintainer)
+scripts/repo-guardrails.sh          repository settings via gh api (run by the maintainer, and once by every fork owner)
 scripts/lib/            shared bash helpers (common, tools, k8s)
 tools/                  versions.env and checksums.txt of the harness tools
 .github/                ci.yml (static, test, images, e2e, e2e-platform), deploy-gcp.yml, ruleset, templates, Dependabot
 .devcontainer/          Node.js 24 + Docker-in-Docker, pinned by digest (runs make tools)
 docs/                   pt-BR docs: architecture, API, contract, runbook, guardrails, harness, sustainment
+FORK.md                 how to fork the lab: what GitHub does not copy, the local lab, your own cloud account
 ```
 
 ## 4. Setup

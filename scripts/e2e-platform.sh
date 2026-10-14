@@ -9,7 +9,8 @@
 # app), mTLS STRICT and the AuthorizationPolicy, Prometheus target and alert rules, Grafana dashboard,
 # logs in Loki, Trivy reports of the app images, the HPA, a database backup + restore drill, Argo CD
 # self-heal, and a chaos experiment with a hypothesis (one API pod killed, the service stays up).
-# Environment: TX03V2_DIR (a tx03v2 checkout; default: clone at the pinned commit), E2E_SKIP_BUILD=1,
+# Environment: TX03V2_DIR (a tx03v2 checkout; default: clone at the pinned commit), TX03V2_REPO (the
+# https URL to clone; default: the original tx03v2, set it to your fork, FORK.md), E2E_SKIP_BUILD=1,
 # KEEP_LAB=1, LOCAL_KIND_INTERNAL=1 (inside a container that drives the host Docker daemon),
 # E2E_DIAGNOSTICS_DIR (default ${TMPDIR:-/tmp}/dx03v2-harness/platform-diagnostics).
 set -euo pipefail
@@ -22,7 +23,7 @@ export PATH="$REPO_ROOT/.tools/bin:$PATH"
 
 NAMESPACE=dx03v2
 HOST=dx03v2.tx03v2.local
-TX03V2_REPO=https://github.com/maringelix/tx03v2.git
+TX03V2_REPO="${TX03V2_REPO:-https://github.com/maringelix/tx03v2.git}"
 DIAG_DIR="${E2E_DIAGNOSTICS_DIR:-${TMPDIR:-/tmp}/dx03v2-harness/platform-diagnostics}"
 CURL_IMAGE="curlimages/curl:8.22.0@sha256:58adaa4e8dca9c988bae2aba4ab3434a0bb2da16bbe3f92dec39ec7785166777"
 WORK_DIR=""
@@ -65,10 +66,11 @@ prepare_tx03v2() {
   else
     ref="$(tr -d '[:space:]' <"$REPO_ROOT/deploy/local/tx03v2.ref")"
     [[ "$ref" =~ ^[0-9a-f]{40}$ ]] || die "deploy/local/tx03v2.ref must hold a 40-character commit SHA"
+    [[ "$TX03V2_REPO" =~ ^https://[A-Za-z0-9.-]+/[A-Za-z0-9._/-]+$ ]] || die "TX03V2_REPO must be an https git URL (got '$TX03V2_REPO')"
     TX="$WORK_DIR/tx03v2"
-    git clone -q "$TX03V2_REPO" "$TX"
-    git -C "$TX" checkout -q "$ref"
-    log "tx03v2 cloned at $ref"
+    git clone -q -- "$TX03V2_REPO" "$TX"
+    git -C "$TX" checkout -q "$ref" || die "commit $ref of deploy/local/tx03v2.ref is not in $TX03V2_REPO (sync your fork or pin a commit of it)"
+    log "tx03v2 cloned from $TX03V2_REPO at $ref"
   fi
   (cd "$TX" && bash scripts/install-tools.sh >/dev/null)
 }

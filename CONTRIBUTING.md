@@ -2,6 +2,8 @@
 
 Thanks for helping. This lab only claims what its harness proves, so every change goes through it.
 
+Forking the lab to run it on your own machine and cloud account? Start with [FORK.md](FORK.md).
+
 ## Workflow
 
 1. Open an issue for anything non-trivial (bugs: use the bug report form).

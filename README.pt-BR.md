@@ -6,6 +6,8 @@ Metade de aplicação do lab de DevOps no Google Cloud: um mural de mensagens pe
 
 [English](README.md)
 
+**Fork do lab:** o [FORK.md](FORK.md) (em inglês) leva você do fork ao lab rodando, primeiro na sua máquina, depois na sua conta de nuvem.
+
 ## O que é
 
 Um lab público e educacional para clonar ou fazer fork e aprender como um app web pequeno é
@@ -152,6 +154,7 @@ Toda a documentação está em português do Brasil.
 
 | Documento | Conteúdo |
 |---|---|
+| [FORK.md](FORK.md) | fork do lab (em inglês): o que o GitHub não copia, o lab local, a sua conta de nuvem |
 | [docs/ARQUITETURA.md](docs/ARQUITETURA.md) | diagramas (local, kind, Google Cloud), decisões, AWS / Azure / Google Cloud, v1 → v2 |
 | [docs/API.md](docs/API.md) | endpoints, erros, exemplos com curl |
 | [docs/CONTRATO.md](docs/CONTRATO.md) | contrato v1 tx03v2 ⇄ dx03v2 (lado do app; fonte da verdade no tx03v2) |

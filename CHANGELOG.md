@@ -8,6 +8,10 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- `scripts/repo-guardrails.sh` also turns issues on (the issue forms) and requires approval for
+  workflow runs from forks of external contributors; the reviewer of the `lab` environment is the gh
+  user that runs it. It fails while the workflows of a fork are still disabled and notes a renamed
+  repository or a CODEOWNERS that names someone else (tested against a stub gh).
 - The ruleset requires the CI job `e2e-platform` too (`.github/rulesets/main.json`, applied with
   `scripts/repo-guardrails.sh`): the local lab is a merge gate, not only maintainer discipline.
 - README status matrix: repository settings as code are applied (read back with `gh api` on
@@ -22,6 +26,13 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- `FORK.md`: forking the app step by step (the steps shared with tx03v2, the local runs, testing against
+  your own tx03v2, deploying to your own cloud account, troubleshooting), linked from both READMEs and
+  CONTRIBUTING.md; the harness requires it.
+- `scripts/e2e-platform.sh` takes `TX03V2_REPO` (an https URL; the CI job `e2e-platform` passes the
+  repository variable of the same name): a fork can test against its own tx03v2. A pinned commit that is
+  not in that repository fails with a clear message.
+- The devcontainer declares 4 CPUs and 8 GB (the platform e2e runs the whole local lab).
 - The app on the full local platform of tx03v2 (docs/LAB_LOCAL.md), ported from `dx01v2` and
   `dx02v2`: overlay `local-platform` (Istio Gateway with HTTPS from cert-manager, HTTPRoutes,
   ExternalSecrets from `local-secrets`, HPA, `PeerAuthentication` STRICT, `AuthorizationPolicy` by
