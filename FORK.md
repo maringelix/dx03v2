@@ -37,9 +37,10 @@ make e2e-platform              # the app on the full local platform of tx03v2, t
 
 You need Node.js 24 (`.nvmrc`) and Docker besides the tools of `make tools`; the devcontainer has both.
 `make e2e-platform` clones tx03v2 at the commit of `deploy/local/tx03v2.ref`, builds the whole local
-lab, deploys the app through the git server of the lab and Argo CD, runs 13 probes (the smoke test
-over HTTPS through an Istio Gateway, mTLS, metrics, alert rules, the dashboard, logs, Trivy reports,
-the HPA, a database backup and restore, self-heal and a chaos experiment) and always destroys the lab
+lab, deploys the app through the git server of the lab and Argo CD, runs 18 probes (the smoke test
+over HTTPS through an Istio Gateway, mTLS, metrics, alert rules, the dashboard, logs, one trace from the
+edge to the database, Trivy reports, the HPA, a zero-downtime rollout, a database backup and restore,
+self-heal and two chaos experiments) and always destroys the lab
 ([docs/LAB_LOCAL.md](docs/LAB_LOCAL.md)). It needs about 8 GB of memory for Docker and takes 25-45
 minutes on a laptop (about 20 in CI). With less memory, `make e2e` alone still proves the manifests
 on kind.

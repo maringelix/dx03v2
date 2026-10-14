@@ -1,4 +1,4 @@
-// Structural checks of the rendered Kubernetes manifests against contract v1 (docs/CONTRATO.md)
+// Structural checks of the rendered Kubernetes manifests against contract v2 (docs/CONTRATO.md)
 // and the hardening rules of docs/GUARDRAILS.md. Used by the harness check `contract-app`.
 //   node scripts/check-manifests.mjs --params <params.env> --local-params <params.env> local=<file> gcp=<file>
 //     gcp-waf=<file> local-platform=<file>
@@ -333,6 +333,7 @@ function localChecks({ objs }) {
   eq(ns?.metadata?.labels?.['pod-security.kubernetes.io/enforce-version'], 'latest', 'local: PSA enforce-version');
   const config = find(objs, 'ConfigMap', 'app-config')?.data ?? {};
   eq([config.APP_ENV, config.DB_SSL_MODE, config.TRUST_PROXY_HOPS], ['kind', 'disable', '1'], 'local: app-config');
+  eq(config.OTEL_EXPORTER_OTLP_ENDPOINT, undefined, 'local: no trace exporter on kind (no Collector there)');
   const pg = find(objs, 'StatefulSet', 'postgres');
   const spec = pg === undefined ? {} : podChecks('local: StatefulSet/postgres', pg);
   eq(spec.securityContext?.runAsUser, 70, 'local: postgres uid');
@@ -562,6 +563,27 @@ function gcpChecks(overlay, { objs }, params, waf) {
       `${overlay}: NetworkPolicy ${name} (exact peers and ports, no except)`,
     );
   }
+  // Contract v2: traces to the OpenTelemetry Collector of the platform layer, and nowhere else.
+  eq(
+    config.OTEL_EXPORTER_OTLP_ENDPOINT,
+    'http://opentelemetry-collector.observability.svc:4318',
+    `${overlay}: OTLP endpoint of the contract`,
+  );
+  eq(
+    find(objs, 'NetworkPolicy', 'api-egress-to-collector')?.spec?.egress,
+    [
+      {
+        to: [
+          {
+            namespaceSelector: { matchLabels: { 'kubernetes.io/metadata.name': 'observability' } },
+            podSelector: { matchLabels: { 'app.kubernetes.io/name': 'opentelemetry-collector' } },
+          },
+        ],
+        ports: [{ protocol: 'TCP', port: 4318 }],
+      },
+    ],
+    `${overlay}: api -> OpenTelemetry Collector (4318) only`,
+  );
 }
 
 // Kinds the AppProject dx03v2 of the tx03v2 local lab lets Argo CD sync (local contract,
@@ -699,6 +721,45 @@ function localPlatformChecks({ objs }, params) {
     find(objs, 'NetworkPolicy', 'api-egress-to-db')?.spec?.egress?.[0],
     { to: [{ ipBlock: { cidr: params.DB_ENDPOINT_CIDR } }], ports: [{ protocol: 'TCP', port: 5432 }] },
     `${overlay}: api -> database only`,
+  );
+  // Local contract v2: the OTLP endpoint and the paths of the spans (API and Gateway, both over the mesh).
+  eq(
+    config.OTEL_EXPORTER_OTLP_ENDPOINT,
+    'http://opentelemetry-collector.monitoring.svc:4318',
+    `${overlay}: OTLP endpoint of the local contract`,
+  );
+  const collector = {
+    namespaceSelector: { matchLabels: { 'kubernetes.io/metadata.name': 'monitoring' } },
+    podSelector: { matchLabels: { 'app.kubernetes.io/name': 'opentelemetry-collector' } },
+  };
+  eq(
+    find(objs, 'NetworkPolicy', 'api-egress-to-collector')?.spec?.egress,
+    [
+      {
+        to: [collector],
+        ports: [
+          { protocol: 'TCP', port: 4318 },
+          { protocol: 'TCP', port: 15008 },
+        ],
+      },
+    ],
+    `${overlay}: api -> OpenTelemetry Collector (OTLP/HTTP over HBONE) only`,
+  );
+  // Every Gateway egress rule that names the Collector: exactly one, OTLP/gRPC (4317) over HBONE (15008).
+  eq(
+    (find(objs, 'NetworkPolicy', 'gateway-egress')?.spec?.egress ?? []).filter((r) =>
+      (r.to ?? []).some((peer) => JSON.stringify(canonical(peer)) === JSON.stringify(canonical(collector))),
+    ),
+    [
+      {
+        to: [collector],
+        ports: [
+          { protocol: 'TCP', port: 4317 },
+          { protocol: 'TCP', port: 15008 },
+        ],
+      },
+    ],
+    `${overlay}: the Gateway must reach the OpenTelemetry Collector on 4317 over HBONE (its spans) and only there`,
   );
   for (const name of ['api-ingress-mesh', 'web-ingress-mesh']) {
     const rules = find(objs, 'NetworkPolicy', name)?.spec?.ingress ?? [];

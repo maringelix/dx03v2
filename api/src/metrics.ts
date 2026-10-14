@@ -1,17 +1,22 @@
 // Prometheus metrics on a separate port (METRICS_PORT), never exposed by the web or the ingress.
 // The HTTP histogram is labelled with the matched route pattern (`/api/messages/:id`), or
-// `unmatched` for 404s, so raw paths never create unbounded label values.
+// `unmatched` for 404s, so raw paths never create unbounded label values. The registry speaks
+// OpenMetrics, so a sample of a traced request carries its trace id as an exemplar (`trace_id`):
+// Grafana opens the trace in Tempo from a point of the latency graph.
 import { createServer, type Server } from 'node:http';
 import type { NextFunction, Request, RequestHandler, Response } from 'express';
-import { collectDefaultMetrics, Histogram, Registry } from 'prom-client';
+import { collectDefaultMetrics, Histogram, Registry, type LabelValues, type OpenMetricsContentType } from 'prom-client';
+
+type HttpLabels = 'method' | 'route' | 'status_code';
 
 export interface Metrics {
-  registry: Registry;
-  httpDuration: Histogram<'method' | 'route' | 'status_code'>;
+  registry: Registry<OpenMetricsContentType>;
+  httpDuration: Histogram<HttpLabels>;
 }
 
 export function createMetrics(): Metrics {
-  const registry = new Registry();
+  const registry = new Registry<OpenMetricsContentType>();
+  registry.setContentType(Registry.OPENMETRICS_CONTENT_TYPE);
   collectDefaultMetrics({ register: registry });
   const httpDuration = new Histogram({
     name: 'http_request_duration_seconds',
@@ -19,11 +24,13 @@ export function createMetrics(): Metrics {
     labelNames: ['method', 'route', 'status_code'] as const,
     buckets: [0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5],
     registers: [registry],
+    enableExemplars: true,
   });
   return { registry, httpDuration };
 }
 
 const routeOf = new WeakMap<Response, string>();
+const traceIdOf = new WeakMap<Response, string>();
 
 /**
  * First handler of every route: records the route pattern while `req.baseUrl` and `req.route`
@@ -41,11 +48,23 @@ export function routeLabel(res: Response): string {
   return routeOf.get(res) ?? 'unmatched';
 }
 
+/** Called by the tracing middleware (telemetry.ts): the trace id becomes the exemplar of the sample. */
+export function setExemplarTraceId(res: Response, traceId: string): void {
+  traceIdOf.set(res, traceId);
+}
+
 export function metricsMiddleware(metrics: Metrics): RequestHandler {
   return (req: Request, res: Response, next: NextFunction) => {
-    const end = metrics.httpDuration.startTimer();
+    const start = process.hrtime.bigint();
     res.once('finish', () => {
-      end({ method: req.method, route: routeLabel(res), status_code: String(res.statusCode) });
+      const traceId = traceIdOf.get(res);
+      metrics.httpDuration.observe({
+        labels: { method: req.method, route: routeLabel(res), status_code: String(res.statusCode) },
+        value: Number(process.hrtime.bigint() - start) / 1e9,
+        // prom-client 15 types exemplar labels with the label names of the metric; trace_id is an
+        // exemplar label only (an empty set records no exemplar).
+        exemplarLabels: (traceId === undefined ? {} : { trace_id: traceId }) as unknown as LabelValues<HttpLabels>,
+      });
     });
     next();
   };

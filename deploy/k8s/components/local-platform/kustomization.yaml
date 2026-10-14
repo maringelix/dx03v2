@@ -43,6 +43,10 @@ patches:
       - op: add
         path: /data/DB_SSL_CA_FILE
         value: /etc/lab-ca/ca.crt
+      # Traces to the OpenTelemetry Collector of the platform (contract key tracing.otlp-endpoint).
+      - op: add
+        path: /data/OTEL_EXPORTER_OTLP_ENDPOINT
+        value: http://opentelemetry-collector.monitoring.svc:4318
   # The HPA owns the replica count (2-4).
   - target:
       kind: Deployment

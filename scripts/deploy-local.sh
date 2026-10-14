@@ -22,9 +22,10 @@ source "$REPO_ROOT/scripts/lib/k8s.sh"
 export PATH="$REPO_ROOT/.tools/bin:$PATH"
 
 NAMESPACE=dx03v2
-CONTRACT_VERSION=1
+CONTRACT_VERSION=2
 SYNC_TIMEOUT="${SYNC_TIMEOUT:-600}"
 WORK_DIR=""
+GITOPS_REV=""
 declare -A C=()
 
 # Values hard-coded in deploy/k8s/components/local-platform: the copy published by tx03v2 must agree.
@@ -37,6 +38,7 @@ EXPECTED=(
   "tls.cluster-issuer=lab-ca"
   "argocd.project=dx03v2"
   "monitoring.prometheus-service-account=monitoring/kube-prometheus-stack-prometheus"
+  "tracing.otlp-endpoint=http://opentelemetry-collector.monitoring.svc:4318"
 )
 
 cleanup() {
@@ -118,7 +120,8 @@ publish() {
     git -C "$repo" commit -qm "deploy dx03v2 $GIT_SHA"
   fi
   git -C "$repo" push -q "${C["gitops.push-url"]}" HEAD:main
-  log "GitOps repository ${C["gitops.read-url"]} at $(git -C "$repo" rev-parse --short HEAD)"
+  GITOPS_REV="$(git -C "$repo" rev-parse HEAD)"
+  log "GitOps repository ${C["gitops.read-url"]} at ${GITOPS_REV:0:7}"
 }
 
 application() {
@@ -151,13 +154,15 @@ EOF
   kubectl -n argocd annotate application dx03v2 argocd.argoproj.io/refresh=normal --overwrite >/dev/null
 }
 
+# Synced and Healthy at the commit just pushed: on a redeploy the Application is already Synced (at the
+# previous commit) until Argo CD fetches the new one.
 wait_sync() {
   local i sync health rev=""
   for i in $(seq 1 $((SYNC_TIMEOUT / 5))); do
     sync="$(kubectl -n argocd get application dx03v2 -o jsonpath='{.status.sync.status}' 2>/dev/null)" || sync=""
     health="$(kubectl -n argocd get application dx03v2 -o jsonpath='{.status.health.status}' 2>/dev/null)" || health=""
     rev="$(kubectl -n argocd get application dx03v2 -o jsonpath='{.status.sync.revision}' 2>/dev/null)" || rev=""
-    [[ "$sync" == Synced && "$health" == Healthy ]] && {
+    [[ "$sync" == Synced && "$health" == Healthy && "$rev" == "$GITOPS_REV" ]] && {
       log "Argo CD: dx03v2 Synced and Healthy at ${rev:0:7}"
       return 0
     }

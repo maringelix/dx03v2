@@ -47,6 +47,11 @@ const envSchema = z
       (value) => value ?? 'unknown',
     ),
     SHUTDOWN_TIMEOUT_MS: integer(100, 120000, 10000),
+    // OpenTelemetry: base URL of an OTLP/HTTP receiver (the Collector of the platform). Unset: no
+    // spans are exported (compose, kind, the tests).
+    OTEL_EXPORTER_OTLP_ENDPOINT: optional(
+      z.url({ protocol: /^https?$/, error: 'OTEL_EXPORTER_OTLP_ENDPOINT must be an http(s) URL' }),
+    ),
   })
   .superRefine((env, ctx) => {
     if (env.APP_ENV === 'lab' && env.DB_SSL_MODE !== 'verify-full') {
@@ -94,6 +99,8 @@ export interface Config {
   adminToken: string | undefined;
   gitSha: string;
   shutdownTimeoutMs: number;
+  /** OTLP/HTTP base URL without a trailing slash, or undefined (tracing off). */
+  otlpEndpoint: string | undefined;
 }
 
 export class ConfigError extends Error {
@@ -156,5 +163,6 @@ export function loadConfig(env: NodeJS.ProcessEnv, readFile: ReadFile = readUtf8
     adminToken: e.ADMIN_TOKEN,
     gitSha: e.GIT_SHA,
     shutdownTimeoutMs: e.SHUTDOWN_TIMEOUT_MS,
+    otlpEndpoint: e.OTEL_EXPORTER_OTLP_ENDPOINT?.replace(/\/+$/, ''),
   };
 }

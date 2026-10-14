@@ -19,11 +19,11 @@ is the source of truth. The full rule list (pt-BR) is [docs/GUARDRAILS.md](docs/
   `scripts/deploy-gcp.sh` was exercised offline with stub `gcloud`/`kubectl`/`docker` only.
   **Nothing of v2 has run in Google Cloud** (`deploy-gcp` is `not run in the cloud (v2)`).
 - The app also has an overlay and a GitOps deploy for the full local platform of tx03v2 (kind, Istio
-  ambient, Argo CD, Prometheus, Loki, Gatekeeper, Trivy Operator, chaos): overlay `local-platform`,
-  `scripts/deploy-local.sh` and `make e2e-platform` (CI job `e2e-platform`,
-  [docs/LAB_LOCAL.md](docs/LAB_LOCAL.md)); the platform e2e is `verified in CI` (13 probes; also locally). It is not
-  cloud-mutating: agents may run it, one heavy run at a time (Docker with 8 GB).
-- The interface with `tx03v2` is [docs/CONTRATO.md](docs/CONTRATO.md) (contract v1, owned by tx03v2; the
+  ambient, Argo CD, Prometheus, Loki, Tempo and the OpenTelemetry Collector, Gatekeeper, Trivy
+  Operator, chaos): overlay `local-platform`, `scripts/deploy-local.sh` and `make e2e-platform` (CI job
+  `e2e-platform`, [docs/LAB_LOCAL.md](docs/LAB_LOCAL.md)); the platform e2e is `verified in CI` (18
+  probes). It is not cloud-mutating: agents may run it, one heavy run at a time (Docker with 8 GB).
+- The interface with `tx03v2` is [docs/CONTRATO.md](docs/CONTRATO.md) (contract v2, owned by tx03v2; the
   local lab has its own local contract, `lab-system/lab-contract`).
 
 ## 2. Non-negotiable rules
@@ -165,6 +165,10 @@ always finish with the tx03v2 destroy + leftover check on the same day, and file
 - Add an environment variable: `api/src/config.ts` (zod schema, readable error), test in
   `api/test/unit/config.test.ts`, then `compose.yaml`, `deploy/k8s/base/configmap.yaml` (or a
   Secret), `docs/API.md`.
+- Trace something new: spans are created by hand in `api/src/telemetry.ts` (no auto-instrumentation
+  loader); never put request bodies, query values or tokens in span attributes; test it with the
+  in-memory processor (`api/test/unit/telemetry.test.ts`, `api/test/integration/tracing.test.ts`);
+  port it to `dx01v2` and `dx02v2`.
 - Change a security header: `web/nginx/security-headers.conf` (included in every location) and the
   expectations in `e2e/smoke.mjs`.
 - Change a NetworkPolicy: update `scripts/check-manifests.mjs` and the probes in `scripts/e2e-kind.sh`.

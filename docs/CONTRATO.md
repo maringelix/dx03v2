@@ -1,4 +1,7 @@
-# Contrato tx03v2 <-> dx03v2 — versão 1 (2026-10-11)
+# Contrato tx03v2 <-> dx03v2 — versão 2 (2026-10-14)
+
+Versão 2: o OpenTelemetry Collector da camada de plataforma do tx03v2 recebe os traces do app. A versão
+1 (2026-10-11) não tinha traces.
 
 Interface entre a infraestrutura (`tx03v2`) e a aplicação (este repositório), na parte que o app usa.
 A fonte da verdade é o
@@ -11,6 +14,7 @@ repositórios e incremento da versão.
 | O quê | Onde | Status |
 |---|---|---|
 | Nomes de Services, portas, probes, Secrets, ConfigMap, Gateway (classe, `NamedAddress`, listener), HTTPRoute (rotas), HealthCheckPolicies, GCPBackendPolicies, ExternalSecrets, HPA, NetworkPolicies (faixas do load balancer, `/32` do Cloud SQL, cache DNS do nó), `TRUST_PROXY_HOPS=2`, labels, só tipos que a Role `dx03v2-deployer` pode escrever | check `contract-app` (`scripts/check-manifests.mjs` sobre os overlays renderizados `gcp` e `gcp-waf`) | `verificado localmente` |
+| Endpoint OTLP da versão 2 no ConfigMap da API e NetworkPolicy só até o Collector (namespace `observability`, porta 4318) | check `contract-app` | `verificado localmente` |
 | Manifests válidos para Kubernetes 1.36, para a Gateway API v1.5.0 standard (a versão que a GKE serve), para `networking.gke.io/v1` (HealthCheckPolicy, GCPBackendPolicy) e para o CRD `ExternalSecret` (`external-secrets.io/v1`) | checks `crd-schemas` e `kubeconform` (estrito) | `verificado localmente` |
 | Formatos dos parâmetros dos overlays (imagens do Artifact Registry com o SHA de 40 caracteres, nome do endereço, política do Cloud Armor ou `none`, exatamente as duas faixas do load balancer, IP RFC 1918 do endpoint do Cloud SQL); valores errados, desconhecidos ou ausentes são recusados | `k8s_validate_params` em `scripts/lib/k8s.sh`, provado por `contract-app` (10 entradas ruins recusadas) | `verificado localmente` |
 | O deploy lê exatamente as 15 chaves abaixo do parâmetro `tx03v2-lab-contract`, confere os valores fixos (os mesmos nomes dos manifests), confia só na raiz do Cloud SQL do contrato, aplica `gcp-waf` ou `gcp`, usa o endpoint DNS e chama o `gcloud` só para leitura | check `contract-app` (sobre `scripts/deploy-gcp.sh`) | `verificado localmente` |
@@ -30,6 +34,7 @@ repositórios e incremento da versão.
 | RBAC Kubernetes do deployer | Role `dx03v2-deployer` + RoleBinding `dx03v2-deployers` no namespace `dx03v2`; sujeitos `kind: User` com o e-mail da conta de serviço `dx03v2-gha-deploy` e os e-mails de `app_deployer_members` do tx03v2 |
 | Artifact Registry | repositório `dx03v2` (Docker, região do lab, tags imutáveis); imagens `<region>-docker.pkg.dev/<project_id>/dx03v2/api` e `.../web`, tag = SHA git completo (40 caracteres) do dx03v2. A conta de serviço dos nós lê o repositório |
 | Conta de serviço do deploy | `dx03v2-gha-deploy@<project_id>.iam.gserviceaccount.com` (nos exemplos `dx03v2-gha-deploy@tx03v2-lab-example.iam.gserviceaccount.com`) |
+| Traces (OpenTelemetry, versão 2) | `http://opentelemetry-collector.observability.svc:4318` (OTLP/HTTP; `OTEL_EXPORTER_OTLP_ENDPOINT` do componente `gcp`). O Collector é instalado pela camada de plataforma do tx03v2 e grava os spans no Cloud Trace do projeto (o ServiceAccount dele é o principal com `roles/cloudtrace.agent`); o app não recebe nenhum papel do IAM para isso |
 
 Regras da Role `dx03v2-deployer` (namespace `dx03v2`), que limitam o que os overlays `gcp*` podem
 conter (o check `contract-app` recusa qualquer outro tipo, e o deploy confere cada verbo com
@@ -153,15 +158,18 @@ GitHub Actions o projeto e o e-mail da conta de serviço. O JSON tem exatamente 
 - Cloud SQL for PostgreSQL 17 (edição Enterprise), porta 5432, só por Private Service Connect,
   `ssl_mode = ENCRYPTED_ONLY`, `server_ca_mode = GOOGLE_MANAGED_CAS_CA`.
 
-## Lab local (contrato local do tx03v2, versão 1)
+## Lab local (contrato local do tx03v2, versão 2)
 
 O deploy local (scripts/deploy-local.sh, docs/LAB_LOCAL.md) lê o ConfigMap `lab-system/lab-contract`
-da plataforma local do tx03v2 e recusa valores diferentes dos fixados no overlay `local-platform`:
+da plataforma local do tx03v2, exige a versão `2` e recusa valores diferentes dos fixados no overlay
+`local-platform`:
 `registry` = `registry.tx03v2.local`, `db.secret-name` = `tx03v2-lab-db-app`,
 `app.admin-token-secret-name` = `tx03v2-lab-app-admin-token` (chave `token`; no Secret Manager é uma
 string pura), `eso.cluster-secret-store` = `local-secrets`, `gateway.class` = `istio`,
 `tls.cluster-issuer` = `lab-ca`, `argocd.project` = `dx03v2`, `monitoring.prometheus-service-account` =
-`monitoring/kube-prometheus-stack-prometheus`. Do contrato ele lê ainda `registry-push`
+`monitoring/kube-prometheus-stack-prometheus`, `tracing.otlp-endpoint` =
+`http://opentelemetry-collector.monitoring.svc:4318` (versão 2: o `OTEL_EXPORTER_OTLP_ENDPOINT` da API
+e as NetworkPolicies até o Collector). Do contrato ele lê ainda `registry-push`
 (`localhost:5003`), `network-cidr` (`10.252.0.0/24`), `db.endpoint-ip` (`10.252.0.11`),
 `db.ca-configmap`, `gitops.push-url`, `gitops.read-url` e `gitops.push-key-secret`. O overlay só usa os
 kinds que o AppProject `dx03v2` aceita (check `contract-app`). Diferenças de borda: o Gateway local

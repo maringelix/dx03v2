@@ -158,4 +158,26 @@ describe('loadConfig', () => {
   it('formats the error message as a readable list', () => {
     expect(() => loadConfig({})).toThrowError(/invalid configuration:\n {2}- DB_HOST is required/);
   });
+
+  it('turns tracing off unless OTEL_EXPORTER_OTLP_ENDPOINT is set', () => {
+    expect(loadConfig(base).otlpEndpoint).toBeUndefined();
+    expect(loadConfig({ ...base, OTEL_EXPORTER_OTLP_ENDPOINT: '' }).otlpEndpoint).toBeUndefined();
+  });
+
+  it('reads the OTLP/HTTP endpoint without a trailing slash', () => {
+    const config = loadConfig({
+      ...base,
+      OTEL_EXPORTER_OTLP_ENDPOINT: 'http://opentelemetry-collector.monitoring.svc:4318/',
+    });
+    expect(config.otlpEndpoint).toBe('http://opentelemetry-collector.monitoring.svc:4318');
+  });
+
+  it.each(['collector:4318', 'ftp://collector:4318', 'grpc://collector:4317'])(
+    'rejects OTEL_EXPORTER_OTLP_ENDPOINT=%s',
+    (value) => {
+      expect(problemsOf({ ...base, OTEL_EXPORTER_OTLP_ENDPOINT: value })).toEqual([
+        'OTEL_EXPORTER_OTLP_ENDPOINT must be an http(s) URL',
+      ]);
+    },
+  );
 });

@@ -7,8 +7,10 @@
 #   5. tx03v2 scripts/local-lab.sh down + leftover check, always (unless KEEP_LAB=1)
 # Probes: smoke test through HTTPS from outside the mesh (load balancer emulator -> Istio Gateway ->
 # app), mTLS STRICT and the AuthorizationPolicy, Prometheus target and alert rules, Grafana dashboard,
-# logs in Loki, Trivy reports of the app images, the HPA, a database backup + restore drill, Argo CD
-# self-heal, and a chaos experiment with a hypothesis (one API pod killed, the service stays up).
+# logs in Loki, one OpenTelemetry trace from the edge to the database (logs and exemplars carrying its
+# id), Trivy reports of the app images, the HPA, a zero-downtime GitOps rollout of a new version, a
+# database backup + restore drill, Argo CD self-heal, and two chaos experiments with a hypothesis (one
+# API pod killed; 200 ms between the API and PostgreSQL, visible in the trace).
 # Environment: TX03V2_DIR (a tx03v2 checkout; default: clone at the pinned commit), TX03V2_REPO (the
 # https URL to clone; default: the original tx03v2, set it to your fork, FORK.md), E2E_SKIP_BUILD=1,
 # KEEP_LAB=1, LOCAL_KIND_INTERNAL=1 (inside a container that drives the host Docker daemon),
@@ -322,6 +324,93 @@ check_observability() {
   pass "observability: API logs are in Loki"
 }
 
+# hex BYTES -> random lowercase hex (W3C trace and span ids, fake commit SHAs).
+hex() { od -An -N"$1" -tx1 /dev/urandom | tr -d ' \n'; }
+
+# tempo_trace TRACE_ID -> the trace as Tempo returns it (OTLP JSON), polled for up to 2 minutes.
+tempo_trace() {
+  local body
+  for _ in $(seq 1 40); do
+    body="$(curl_probe "http://tempo.monitoring.svc:3200/api/traces/$1")"
+    if [[ "$(tail -n 1 <<<"$body")" == 200 && "$body" == *'"spanId"'* ]]; then
+      sed '$d' <<<"$body"
+      return 0
+    fi
+    sleep 3
+  done
+  return 1
+}
+
+# spans_of < OTLP JSON -> one line per span: <service.name> TAB <span name> TAB <duration in ms>.
+spans_of() {
+  # shellcheck disable=SC2016 # JavaScript template literals, not shell expansions
+  node -e 'const d = JSON.parse(require("fs").readFileSync(0, "utf8"));
+    for (const b of d.batches ?? d.resourceSpans ?? []) {
+      const svc = (b.resource?.attributes ?? []).find((a) => a.key === "service.name")?.value?.stringValue ?? "?";
+      for (const s of (b.scopeSpans ?? []).flatMap((x) => x.spans ?? [])) {
+        const ms = Number(BigInt(s.endTimeUnixNano) - BigInt(s.startTimeUnixNano)) / 1e6;
+        console.log(`${svc}\t${s.name}\t${Math.round(ms)}`);
+      }
+    }'
+}
+
+# traced_read TRACE_ID -> HTTP code of GET /api/messages?limit=1 through the Gateway, as part of the
+# trace TRACE_ID (W3C traceparent with a random parent span).
+traced_read() {
+  local ip
+  ip="$(gateway_ip)"
+  curl_probe "https://$HOST/api/messages?limit=1" --cacert /lab-ca/ca.crt --resolve "$HOST:443:$ip" \
+    -H "traceparent: 00-$1-$(hex 8)-01" | tail -n 1
+}
+
+# trace_spans TRACE_ID -> the span lines of the trace once the Gateway span, the API span and its
+# query span are all in Tempo (the Collector and the API export in batches); fails after 2 minutes.
+trace_spans() {
+  local body spans
+  for _ in $(seq 1 20); do
+    body="$(tempo_trace "$1")" || return 1
+    spans="$(spans_of <<<"$body")"
+    if awk -F'\t' '$1 == "dx03v2-istio.dx03v2" { g = 1 } $1 == "dx03v2-api" && $2 == "GET /api/messages" { a = 1 }
+      $1 == "dx03v2-api" && $2 == "SELECT dx03v2" { q = 1 } END { exit !(g && a && q) }' <<<"$spans"; then
+      printf '%s\n' "$spans"
+      return 0
+    fi
+    sleep 6
+  done
+  printf '%s\n' "$spans" >&2
+  return 1
+}
+
+# Observability 2.0 for the app: one trace from the edge to the database, and the three signals linked
+# (the log lines of the request and an exemplar of its latency histogram carry the trace id).
+check_tracing() {
+  local trace code body start
+  trace="$(hex 16)"
+  code="$(traced_read "$trace")"
+  [[ "$code" == 200 ]] || die "tracing: the traced read failed (HTTP $code)"
+  trace_spans "$trace" >/dev/null ||
+    die "tracing: trace $trace in Tempo lacks the Gateway, the API or the query span (above)"
+  pass "tracing: one trace in Tempo from the edge to the database (Gateway -> GET /api/messages -> SELECT dx03v2)"
+  for _ in $(seq 1 30); do
+    body="$(curl_probe 'http://loki.monitoring.svc:3100/loki/api/v1/query_range' -G \
+      --data-urlencode "query={namespace=\"$NAMESPACE\",app=\"api\"} |= \"$trace\"" --data-urlencode since=15m)"
+    [[ "$body" == *'"values":[['* ]] && break
+    sleep 5
+  done
+  [[ "$body" == *'"values":[['* ]] || die "tracing: no API log line with the trace id $trace in Loki"
+  pass "tracing: the API log lines of the request carry its trace id in Loki (logs -> traces)"
+  start=$(($(date +%s) - 900))
+  for _ in $(seq 1 25); do
+    body="$(curl_probe 'http://kube-prometheus-stack-prometheus.monitoring.svc:9090/api/v1/query_exemplars' -G \
+      --data-urlencode "query=http_request_duration_seconds_bucket{namespace=\"$NAMESPACE\",route=\"/api/messages\"}" \
+      --data-urlencode "start=$start" --data-urlencode "end=$(($(date +%s) + 60))")"
+    [[ "$body" == *"$trace"* ]] && break
+    sleep 6
+  done
+  [[ "$body" == *"$trace"* ]] || die "tracing: Prometheus has no exemplar of the API histogram with the trace id $trace"
+  pass "tracing: the latency histogram of the API keeps the trace id as an exemplar (metrics -> traces)"
+}
+
 check_trivy() {
   local n
   for _ in $(seq 1 120); do
@@ -369,6 +458,69 @@ check_db_backup() {
   docker exec -i "$db_container" psql -q -U dx03v2 -d dx03v2 -v ON_ERROR_STOP=1 <"$WORK_DIR/dx03v2.sql" >/dev/null
   [[ "$(api GET /api/messages?limit=100)" == *"$marker"* ]] || die "backup: the restored database does not have the marker"
   pass "backup: pg_dump of the lab database, marker deleted, restore brings it back ($(wc -c <"$WORK_DIR/dx03v2.sql") bytes)"
+}
+
+# Hypothesis: a new version delivered the GitOps way (new image tags in the GitOps repository, Argo CD
+# sync, RollingUpdate with maxUnavailable 0, readiness probes, preStop sleep and graceful shutdown)
+# loses no request: a reader that alternates API and web requests through the Gateway sees no error.
+check_zero_downtime() {
+  local ip name=rollout-reader new_sha phase="" out total fail
+  ip="$(gateway_ip)"
+  new_sha="$(hex 20)"
+  kubectl -n dx03v2-probe apply -f - >/dev/null <<EOF
+apiVersion: v1
+kind: Pod
+metadata:
+  name: $name
+spec:
+  restartPolicy: Never
+  automountServiceAccountToken: false
+$(security_context)
+  containers:
+    - name: curl
+      image: $CURL_IMAGE
+      command: ["sh", "-c"]
+      args:
+        - |
+          for i in \$(seq 1 1500); do
+            for path in /api/messages?limit=1 /; do
+              code=\$(curl -s --cacert /lab-ca/ca.crt -m 3 -o /dev/null -w '%{http_code}' --resolve "$HOST:443:$ip" "https://$HOST\$path")
+              if [ "\$code" = 200 ]; then echo ok; else echo "fail \$code \$path"; fi
+            done
+            sleep 0.2
+          done
+      volumeMounts:
+        - name: lab-ca
+          mountPath: /lab-ca
+$(container_security)
+  volumes:
+    - name: lab-ca
+      configMap:
+        name: lab-ca
+EOF
+  kubectl -n dx03v2-probe wait --for=condition=Ready "pod/$name" --timeout=120s >/dev/null ||
+    die "rollout: the reader pod did not start"
+  sleep 5
+  GIT_SHA="$new_sha" DEPLOY_ALLOW_DIRTY=1 bash "$REPO_ROOT/scripts/deploy-local.sh" >"$WORK_DIR/rollout.log" 2>&1 || {
+    cat "$WORK_DIR/rollout.log" >&2
+    die "rollout: deploy-local of the new version failed"
+  }
+  for deploy in api web; do
+    [[ "$(kubectl -n "$NAMESPACE" get deployment "$deploy" -o jsonpath='{.spec.template.spec.containers[0].image}')" == *":$new_sha" ]] ||
+      die "rollout: the $deploy Deployment does not run the new tag $new_sha"
+  done
+  # A few more seconds of traffic once the old pods are gone.
+  sleep 10
+  phase="$(kubectl -n dx03v2-probe get pod "$name" -o jsonpath='{.status.phase}')"
+  [[ "$phase" == Running ]] || die "rollout: the reader stopped before the rollout ended (phase $phase): widen its window"
+  out="$(kubectl -n dx03v2-probe logs "$name")"
+  kubectl -n dx03v2-probe delete pod "$name" --wait=false >/dev/null 2>&1 || :
+  total="$(grep -cE '^(ok|fail)' <<<"$out" || :)"
+  fail="$(grep -c '^fail' <<<"$out" || :)"
+  ((total >= 100)) || die "rollout: the reader made only $total requests"
+  ((fail == 0)) ||
+    die "rollout: hypothesis refuted, $fail of $total requests failed during the rollout: $(grep '^fail' <<<"$out" | sort | uniq -c | tr '\n' ' ')"
+  pass "rollout: a new version deployed the GitOps way (api and web rolled) lost 0 of $total requests through the Gateway (zero downtime)"
 }
 
 check_self_heal() {
@@ -441,6 +593,53 @@ EOF
   pass "chaos: one API pod killed by Chaos Mesh, $ok/40 reads through the Gateway succeeded (hypothesis held)"
 }
 
+# Hypothesis: 200 ms of network latency between the API and PostgreSQL (NetworkChaos on the API pods,
+# target: the database address of the contract) slows reads but fails none (the query timeouts are 5-6 s),
+# and the trace shows the delay where it happens, in the query span.
+check_chaos_db_latency() {
+  local db_ip code ok=0 trace spans ms
+  db_ip="$(kubectl -n lab-system get configmap lab-contract -o jsonpath='{.data.db\.endpoint-ip}')"
+  kubectl -n "$NAMESPACE" apply -f - >/dev/null <<EOF
+apiVersion: chaos-mesh.org/v1alpha1
+kind: NetworkChaos
+metadata:
+  name: delay-api-to-db
+spec:
+  action: delay
+  mode: all
+  selector:
+    namespaces: [$NAMESPACE]
+    labelSelectors:
+      app.kubernetes.io/name: api
+  delay:
+    latency: 200ms
+    jitter: 0ms
+    correlation: "0"
+  direction: to
+  externalTargets: ["$db_ip"]
+  duration: 180s
+EOF
+  for _ in $(seq 1 60); do
+    [[ "$(kubectl -n "$NAMESPACE" get networkchaos delay-api-to-db -o jsonpath='{.status.conditions[?(@.type=="AllInjected")].status}' 2>/dev/null)" == True ]] && break
+    sleep 2
+  done
+  for _ in $(seq 1 10); do
+    code="$(traced_read "$(hex 16)")"
+    [[ "$code" == 200 ]] && ok=$((ok + 1))
+  done
+  trace="$(hex 16)"
+  code="$(traced_read "$trace")"
+  kubectl -n "$NAMESPACE" delete networkchaos delay-api-to-db >/dev/null 2>&1 || :
+  [[ "$code" == 200 ]] && ok=$((ok + 1))
+  ((ok == 11)) || die "chaos: hypothesis refuted, only $ok/11 reads succeeded with 200 ms between the API and PostgreSQL"
+  spans="$(trace_spans "$trace")" || die "chaos: the trace $trace of the slow read is incomplete in Tempo"
+  ms="$(awk -F'\t' '$1 == "dx03v2-api" && $2 == "SELECT dx03v2" { print $3; exit }' <<<"$spans")"
+  if [[ ! "$ms" =~ ^[0-9]+$ ]] || ((ms < 190)); then
+    die "chaos: the query span of the slow read lasted ${ms:-?} ms: the delay was not injected (or not visible)"
+  fi
+  pass "chaos: 200 ms between the API and PostgreSQL (NetworkChaos): $ok/11 reads succeeded, and the trace shows the delay in the query span (${ms} ms)"
+}
+
 main() {
   require_cmd git docker kubectl node ssh base64
   WORK_DIR="$(mktemp -d)"
@@ -459,10 +658,13 @@ main() {
   check_smoke
   check_mesh
   check_observability
+  check_tracing
   check_trivy
   check_hpa
+  check_zero_downtime
   check_self_heal
   check_chaos
+  check_chaos_db_latency
   printf 'SUMMARY: dx03v2 on the tx03v2 local platform: %d probes passed\n' "$PASSED"
 }
 
