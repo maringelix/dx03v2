@@ -18,7 +18,8 @@ make e2e-platform    # sobe o lab do tx03v2, faz o deploy, roda as sondas e dest
 ```
 
 O script clona o tx03v2 no commit de `deploy/local/tx03v2.ref`; com `TX03V2_DIR=<checkout>` ele usa
-um checkout seu. `KEEP_LAB=1` mantém o lab no fim (`bash <tx03v2>/scripts/local-lab.sh down` depois).
+um checkout seu, e `TX03V2_REPO=<URL https>` clona outro repositório (o seu fork; no CI, a variável de
+repositório `TX03V2_REPO`, `FORK.md`). `KEEP_LAB=1` mantém o lab no fim (`bash <tx03v2>/scripts/local-lab.sh down` depois).
 Dentro de um contêiner que usa o Docker do host, exporte `LOCAL_KIND_INTERNAL=1`. Precisa de Docker com
 8 GB de memória.
 

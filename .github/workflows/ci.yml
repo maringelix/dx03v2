@@ -210,6 +210,8 @@ jobs:
         env:
           E2E_SKIP_BUILD: '1'
           E2E_DIAGNOSTICS_DIR: ${{ runner.temp }}/platform-diagnostics
+          # Optional repository variable of a fork: its own tx03v2 (FORK.md). Empty: the original.
+          TX03V2_REPO: ${{ vars.TX03V2_REPO }}
 
       # The job log keeps only the tail of the run (the destroy); the full log shows the failed probe.
       # Sensitive Terraform values are never printed, and the lab credentials die with the runner.
