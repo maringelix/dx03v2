@@ -226,7 +226,7 @@ dos health checks — por isso as NetworkPolicies liberam essas duas faixas, e n
 |---|---|---|---|
 | App (`api/`, `web/`, migrações) | commit `22e69c4` + traces com OpenTelemetry (2026-10-14) | o mesmo; só nomes e comentários | o mesmo; só nomes e comentários (o serviço dos spans é `dx03v2-api`) |
 | Traces | Collector do tx01v2 → AWS X-Ray | Collector do tx02v2 → Application Insights | Collector do tx03v2 → Cloud Trace (o ServiceAccount do Collector é o principal do IAM) |
-| Testes | suíte do commit `22e69c4` | + 1 caso de integração (`X-Forwarded-For` sem espaço do AGC) | os do dx02v2 + 1 caso (`<cliente>,<load balancer>` com `TRUST_PROXY_HOPS=2`), ainda não portado para os outros dois |
+| Testes | suíte do commit `22e69c4` + os casos de integração do `X-Forwarded-For` do AGC (sem espaço) e do load balancer do Google (`<cliente>,<load balancer>`, `TRUST_PROXY_HOPS=2`) | a mesma suíte | a mesma suíte (os dois casos começaram no dx02v2 e aqui e foram portados para os três) |
 | Smoke test | `SMOKE_BEHIND_WAF=1`: 403 do WAF acima de 8 KB | `SMOKE_EDGE=agc`: CSP da API, `X-Request-Id` do AGC, 413 da API | `SMOKE_EDGE=gke`: CSP da API, propriedade de segurança do `X-Request-Id`, 413 da API |
 | Cluster | EKS 1.36 (tx01v2), access entries | AKS 1.36 (tx02v2), Entra ID; `kubelogin` | GKE Autopilot 1.36 (tx03v2, canal REGULAR); endpoint DNS e `gke-gcloud-auth-plugin` |
 | Entrada | Ingress da AWS Load Balancer Controller (ALB) + WAFv2 | Gateway API no Application Gateway for Containers + WebApplicationFirewallPolicy | Gateway API no controlador da GKE (Application Load Balancer externo global) + GCPBackendPolicies com Cloud Armor |
