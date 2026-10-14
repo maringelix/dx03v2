@@ -54,6 +54,10 @@
           {
             "context": "e2e",
             "integration_id": 15368
+          },
+          {
+            "context": "e2e-platform",
+            "integration_id": 15368
           }
         ]
       }

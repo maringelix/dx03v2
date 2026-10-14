@@ -60,10 +60,9 @@ nuvem.
 | `e2e` | carrega o artefato, `bash scripts/install-tools.sh kind kubectl`, `make e2e` com `E2E_SKIP_BUILD=1`; diagnósticos como artefato em caso de falha | `e2e` |
 | `e2e-platform` | carrega o artefato, `make e2e-platform` com `E2E_SKIP_BUILD=1`: clona o tx03v2 no commit de `deploy/local/tx03v2.ref`, sobe o lab local completo, faz o deploy GitOps e roda as sondas (`docs/LAB_LOCAL.md`); log completo e diagnósticos como artefato em caso de falha | `platform` |
 
-Os ids `static`, `test`, `images` e `e2e` são estáveis: são os checks exigidos pelo ruleset
-(`.github/rulesets/main.json`); o check `policy-workflows` impede que mudem sem querer. O
-`e2e-platform` roda em todo PR e precisa estar verde para o merge (disciplina do mantenedor; ainda fora
-do ruleset). Checks novos: `promtool-rules` (estático: `promtool check rules` e `promtool test rules`
+Os ids `static`, `test`, `images`, `e2e` e `e2e-platform` são estáveis: são os checks exigidos pelo
+ruleset (`.github/rulesets/main.json`; o `e2e-platform` entrou em 2026-10-13); o check `policy-workflows`
+impede que mudem sem querer. Checks novos: `promtool-rules` (estático: `promtool check rules` e `promtool test rules`
 das regras de alerta do overlay `local-platform`) e `platform-e2e` (estágio `platform`).
 
 ## Modo estrito

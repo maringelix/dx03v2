@@ -79,7 +79,7 @@ REQUIRED_FILES=(
   scripts/check-build-context.mjs
   deploy/k8s/components/gcp/params.example.env deploy/k8s/schemas/source.env
 )
-STABLE_CI_JOBS=(static test images e2e)
+STABLE_CI_JOBS=(static test images e2e e2e-platform)
 
 # ---------------------------------------------------------------------------------------------
 # Check registry and helpers

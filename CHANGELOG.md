@@ -8,6 +8,10 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- The ruleset requires the CI job `e2e-platform` too (`.github/rulesets/main.json`, applied with
+  `scripts/repo-guardrails.sh`): the local lab is a merge gate, not only maintainer discipline.
+- README status matrix: repository settings as code are applied (read back with `gh api` on
+  2026-10-13), no longer `planned`.
 - The CI (`static`, `test`, `images`, `e2e`) ran green on GitHub: the README status matrix now says
   `verified in CI` for the rows backed by a CI job (compose stays `verified locally`).
 - Dependabot ignores major bumps of the `node` build image (it follows `.nvmrc` and `engines.node`;
