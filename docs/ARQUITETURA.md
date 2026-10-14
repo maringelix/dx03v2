@@ -128,10 +128,12 @@ dos health checks — por isso as NetworkPolicies liberam essas duas faixas, e n
    `/readyz` faz `SELECT 1` com limite de 1 s e volta a 200 quando o banco volta.
 9. **Migrações explícitas.** Arquivos SQL numerados, uma transação por arquivo, `pg_advisory_lock` e
    checksum em `schema_migrations`. Rodam no initContainer `migrate` e no serviço `migrate` (compose).
-10. **Desligamento gracioso.** SIGTERM → `/readyz` 503 → `server.close()` → `pool.end()`; saída
-    forçada após `SHUTDOWN_TIMEOUT_MS` (10 s); `preStop` com a ação `sleep` de 5 s.
-11. **Métricas separadas.** `/metrics` na porta 9464; nem o web nem o Gateway expõem essa porta; a
-    NetworkPolicy só aceita o namespace `monitoring` (não há Prometheus neste lab).
+10. **Desligamento gracioso.** SIGTERM → `/readyz` 503 → `server.close()` → `pool.end()` → flush dos
+    spans pendentes (no máximo 5 s; um Collector fora do ar não transforma o desligamento em falha);
+    saída forçada após `SHUTDOWN_TIMEOUT_MS` (10 s); `preStop` com a ação `sleep` de 5 s.
+11. **Métricas separadas.** `/metrics` na porta 9464, no formato OpenMetrics (o exemplar leva o
+    `trace_id` da requisição); nem o web nem o Gateway expõem essa porta; a NetworkPolicy só aceita o
+    namespace `monitoring` (não há Prometheus neste lab).
 12. **Gateway API no controlador de Gateway da GKE.** O controlador é gerenciado pelo Google (nada a
     instalar, nenhuma versão para manter) e a GKE serve a Gateway API v1.5.0 (GKE >=
     1.35.2-gke.1842000, ligada por padrão no Autopilot). A classe `gke-l7-global-external-managed`
@@ -191,6 +193,12 @@ dos health checks — por isso as NetworkPolicies liberam essas duas faixas, e n
     se ele repassa, troca ou acrescenta esse cabeçalho). O corpo de 70 KB recebe 413 nos dois: do
     nginx (64k) ou, atrás do Gateway, da própria API (o Cloud Armor inspeciona os primeiros 64 KB e não
     bloqueia por tamanho).
+23. **Traces com OpenTelemetry, sem loader.** A API cria os próprios spans (SERVER por requisição,
+    CLIENT por consulta dentro dela) com a API e o SDK oficiais do OpenTelemetry, em vez da
+    auto-instrumentação, que no ESM exige um hook de carregamento de módulos. Spans em OTLP/HTTP para o
+    Collector da plataforma do tx03v2 (`OTEL_EXPORTER_OTLP_ENDPOINT`; desligado sem ele), que os grava no
+    Cloud Trace; W3C trace context, e o trace id nos logs (`trace_id`, `span_id`) e nos exemplars. As
+    sondas `/healthz` e `/readyz` não geram span. O mesmo código do dx01v2 e do dx02v2.
 
 ### Riscos conhecidos do caminho Google Cloud
 
@@ -216,8 +224,9 @@ dos health checks — por isso as NetworkPolicies liberam essas duas faixas, e n
 
 | Aspecto | dx01v2 (AWS) | dx02v2 (Azure) | dx03v2 (Google Cloud) |
 |---|---|---|---|
-| App (`api/`, `web/`, migrações) | commit `22e69c4` | o mesmo; só nomes e comentários | o mesmo; só nomes e comentários |
-| Testes | suíte do commit `22e69c4` | + 1 caso de integração (`X-Forwarded-For` sem espaço do AGC) | os do dx02v2 + 1 caso (`<cliente>,<load balancer>` com `TRUST_PROXY_HOPS=2`), ainda não portado para os outros dois |
+| App (`api/`, `web/`, migrações) | commit `22e69c4` + traces com OpenTelemetry (2026-10-14) | o mesmo; só nomes e comentários | o mesmo; só nomes e comentários (o serviço dos spans é `dx03v2-api`) |
+| Traces | Collector do tx01v2 → AWS X-Ray | Collector do tx02v2 → Application Insights | Collector do tx03v2 → Cloud Trace (o ServiceAccount do Collector é o principal do IAM) |
+| Testes | suíte do commit `22e69c4` + os casos de integração do `X-Forwarded-For` do AGC (sem espaço) e do load balancer do Google (`<cliente>,<load balancer>`, `TRUST_PROXY_HOPS=2`) | a mesma suíte | a mesma suíte (os dois casos começaram no dx02v2 e aqui e foram portados para os três) |
 | Smoke test | `SMOKE_BEHIND_WAF=1`: 403 do WAF acima de 8 KB | `SMOKE_EDGE=agc`: CSP da API, `X-Request-Id` do AGC, 413 da API | `SMOKE_EDGE=gke`: CSP da API, propriedade de segurança do `X-Request-Id`, 413 da API |
 | Cluster | EKS 1.36 (tx01v2), access entries | AKS 1.36 (tx02v2), Entra ID; `kubelogin` | GKE Autopilot 1.36 (tx03v2, canal REGULAR); endpoint DNS e `gke-gcloud-auth-plugin` |
 | Entrada | Ingress da AWS Load Balancer Controller (ALB) + WAFv2 | Gateway API no Application Gateway for Containers + WebApplicationFirewallPolicy | Gateway API no controlador da GKE (Application Load Balancer externo global) + GCPBackendPolicies com Cloud Armor |

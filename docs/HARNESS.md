@@ -147,7 +147,7 @@ temporários. No repositório ficam só `.tools/`, `node_modules/` e `*/dist/` (
 | `FAIL crd-schemas` | arquivo de `deploy/k8s/schemas` editado à mão, ou o gerador mudou | `scripts/update-crd-schemas.sh <versão da Gateway API> <commit do catálogo>` (os de `source.env`) e commit do resultado |
 | `FAIL crd-schemas ... download failed` / SHA-256 diferente | sem rede, ou o GitHub devolveu outro conteúdo | confira a rede; um SHA-256 diferente nunca é aceito (pare e investigue) |
 | `FAIL kubeconform ... could not find schema` | sem rede, ou schema do catálogo que o kubeconform não compila | confira a rede; os commits dos catálogos estão fixados em `scripts/harness.sh` |
-| `FAIL contract-app` | manifest, parâmetro ou `scripts/deploy-gcp.sh` divergente do contrato v1 ou do hardening | corrija; mudança de contrato exige PR coordenado com o tx03v2 |
+| `FAIL contract-app` | manifest, parâmetro ou `scripts/deploy-gcp.sh` divergente do contrato v2 ou do hardening | corrija; mudança de contrato exige PR coordenado com o tx03v2 |
 | `FAIL policy-workflows` | `deploy-gcp.yml` sem o passo `Check repository variables`, com outra versão do `auth`/`setup-gcloud`, sem `version:` do gcloud, ou com chave de conta de serviço | siga a mensagem; o deploy é só Workload Identity Federation |
 | `FAIL policy-images ... gha-creds` | um `.dockerignore`/`Dockerfile.dockerignore` deixou o arquivo de credenciais entrar no contexto | acrescente `**/gha-creds-*.json` ao arquivo |
 | `FAIL policy-cloud` | algo do caminho de outra nuvem (nome de arquivo, serviço, região) fora de README, ARQUITETURA e CHANGELOG | remova ou descreva em termos do Google Cloud |

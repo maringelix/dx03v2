@@ -165,6 +165,10 @@ curl -fsS "http://$(kubectl -n dx03v2 get gateway dx03v2 -o jsonpath='{.status.a
 Com o WAF, uma requisição com padrão de SQL injection deve receber 403 do Cloud Armor (ver o runbook
 do tx03v2).
 
+Traces (contrato v2): depois de algumas requisições, o serviço `dx03v2-api` aparece no Trace Explorer
+do projeto. O caminho é API → `opentelemetry-collector.observability` (OTLP/HTTP, porta 4318) → Cloud
+Trace; o Collector e a concessão `roles/cloudtrace.agent` são do tx03v2.
+
 ## 9. Desligar
 
 O teardown é o destroy do tx03v2 (workflow de destroy + checagem de sobras): o
@@ -196,6 +200,7 @@ cobrado enquanto não estiver preso a uma forwarding rule).
 | Smoke com 502 ou tempo esgotado logo depois do `Programmed` | load balancer ainda propagando, ou health checks falhando | espere; `kubectl -n dx03v2 describe healthcheckpolicies.networking.gke.io`; NetworkPolicies das faixas do load balancer |
 | Smoke com 403 em tudo | regra do Cloud Armor | logs do Cloud Armor no tx03v2; nenhuma regra pode bloquear o smoke (contrato) |
 | `ImagePullBackOff` | conta de serviço dos nós sem leitura no repositório `dx03v2` | o tx03v2 concede esse papel no apply (contrato); confira o apply |
+| Nenhum trace no Cloud Trace | Collector ausente (plataforma antiga do tx03v2, contrato v1) ou sem `roles/cloudtrace.agent` | `kubectl -n observability get pods`; logs do Collector (`kubectl -n observability logs deployment/opentelemetry-collector`); a API nunca falha por isso: os spans só se perdem |
 
 ## 11. Registro
 

@@ -24,7 +24,7 @@ ADMIN_TOKEN="$(sed -n 's/^ADMIN_TOKEN=//p' .env)"
 | `POST /api/messages` | cria uma mensagem; corpo JSON `{"author","text"}` | 201 com a mensagem e `Location`; 400, 413, 415, 429 |
 | `DELETE /api/messages/:id` | apaga uma mensagem; exige `Authorization: Bearer <ADMIN_TOKEN>` | 204; 400, 401, 404; 503 `admin_disabled` sem `ADMIN_TOKEN` configurado |
 | `GET /api/stats` | contagem de mensagens | 200 `{"messages":N}` |
-| `GET /metrics` (porta `METRICS_PORT`, 9464) | métricas Prometheus: padrão do Node.js + `http_request_duration_seconds{method,route,status_code}` | 200; não exposto pelo web nem pelo Gateway |
+| `GET /metrics` (porta `METRICS_PORT`, 9464) | métricas no formato OpenMetrics: padrão do Node.js + `http_request_duration_seconds{method,route,status_code}`, com o `trace_id` da requisição como exemplar quando há tracing | 200; não exposto pelo web nem pelo Gateway |
 
 `/healthz` e `/readyz` não passam pelo nginx (`/healthz` do nginx é do próprio web): o Kubernetes
 consulta a API direto no pod e, no Google Cloud, o load balancer do Gateway usa `/readyz` como
@@ -94,6 +94,7 @@ volta igual ou como UUID, um ID inseguro nunca volta e duas requisições nunca 
 | `ADMIN_TOKEN` | — | opcional; com valor, no mínimo 32 caracteres (Secret `app-secrets`) |
 | `GIT_SHA` | `unknown` | commit exibido em `/api/info` (as imagens recebem pelo build arg) |
 | `SHUTDOWN_TIMEOUT_MS` | `10000` | prazo do desligamento gracioso antes da saída forçada |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | — | opcional; URL http(s) de um receptor OTLP/HTTP (o OpenTelemetry Collector da plataforma). Com valor, a API exporta os spans das requisições e das consultas (W3C `traceparent` de entrada continuado) e escreve `trace_id`/`span_id` nos logs; sem valor, nada é exportado |
 
 Qualquer valor inválido encerra o processo na partida com a lista de problemas (sem ecoar valores).
 

@@ -12,6 +12,7 @@ import { REQUEST_ID_HEADER, resolveRequestId } from './middleware/request-id.ts'
 import { healthRouter, type AppState } from './routes/health.ts';
 import { infoRouter } from './routes/info.ts';
 import { messagesRouter } from './routes/messages.ts';
+import { tracingMiddleware } from './telemetry.ts';
 
 export interface AppDeps {
   config: Config;
@@ -32,6 +33,9 @@ export function createApp({ config, pool, logger, metrics, state, version }: App
   // trust any X-Forwarded-For.
   app.set('trust proxy', config.trustProxyHops);
 
+  // First: everything below (the request log included) runs inside the SERVER span of the request.
+  // Without a tracer provider (OTEL_EXPORTER_OTLP_ENDPOINT unset) the span is a no-op.
+  app.use(tracingMiddleware());
   app.use(
     pinoHttp({
       logger,

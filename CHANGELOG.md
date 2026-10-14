@@ -8,6 +8,8 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- The family table of both READMEs links the family hub `tx00v2` (roadmap, family guardrails,
+  cross-repo checks).
 - `scripts/repo-guardrails.sh` also turns issues on (the issue forms) and requires approval for
   workflow runs from forks of external contributors; the reviewer of the `lab` environment is the gh
   user that runs it. It fails while the workflows of a fork are still disabled and notes a renamed
@@ -25,8 +27,31 @@ All notable changes to this project are documented here. The format follows
   the Google Cloud load balancer case of the rate-limit test as pending: dx01v2 and dx02v2 have it
   too (ported on 2026-10-12).
 
+### Fixed
+
+- `scripts/deploy-local.sh` waits for the Argo CD sync of the commit it pushed: on a redeploy the
+  Application was still Synced and Healthy on the previous commit, and the script went on too early.
+
 ### Added
 
+- Traces with OpenTelemetry, ported from `dx01v2` (same `api/` code, names only): a SERVER span per
+  request (named after the route) and a CLIENT span per PostgreSQL query inside it (parameterized SQL
+  only), W3C `traceparent` continued, OTLP/HTTP to `OTEL_EXPORTER_OTLP_ENDPOINT` (off without it).
+  Manual spans with `@opentelemetry/api` 1.9.1, `sdk-trace-node` 2.12.0, `exporter-trace-otlp-http`
+  0.223.0, `resources` 2.12.0 and `semantic-conventions` 1.43.0, no ESM loader hook; `/healthz` and
+  `/readyz` untraced; the shutdown flush takes at most 5 s and never fails because of the Collector.
+  Log lines carry `trace_id`/`span_id`, and `/metrics` speaks OpenMetrics with the trace id as an
+  exemplar. New unit and integration tests (`telemetry`, `tracing`).
+- Contract version 2 with tx03v2: the overlay `local-platform` sends the traces to the Collector of the
+  local contract (`tracing.otlp-endpoint`, required by `scripts/deploy-local.sh`), the component `gcp`
+  to `opentelemetry-collector.observability.svc:4318` (`not run in the cloud (v2)`; the Collector of
+  tx03v2 writes them to Cloud Trace). NetworkPolicies widened only for that: API → Collector (4318)
+  and Gateway → Collector (4317, its spans), both over HBONE (15008) in the mesh; `contract-app`
+  asserts both.
+- `make e2e-platform` has 18 probes (was 13): one trace in Tempo from the Gateway to the query, the
+  `trace_id` in the log lines in Loki and in an exemplar in Prometheus; a zero-downtime rollout; 200 ms
+  of latency between the API and PostgreSQL (NetworkChaos), every read passes and the trace shows the
+  delay in the query span.
 - `FORK.md`: forking the app step by step (the steps shared with tx03v2, the local runs, testing against
   your own tx03v2, deploying to your own cloud account, troubleshooting), linked from both READMEs and
   CONTRIBUTING.md; the harness requires it.

@@ -1,6 +1,7 @@
 // API entrypoint (`node dist/server.js`). startServer() is exported for the integration tests.
 // Graceful shutdown on SIGTERM/SIGINT: readiness turns 503, server.close() waits for in-flight
-// requests, then the pool is closed; the process is forced out after SHUTDOWN_TIMEOUT_MS.
+// requests, then the pool is closed and the pending spans are flushed; the process is forced out
+// after SHUTDOWN_TIMEOUT_MS.
 import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import type { Logger } from 'pino';
@@ -11,6 +12,7 @@ import { isMain, readVersion } from './entrypoint.ts';
 import { createLogger } from './logger.ts';
 import { createMetrics, createMetricsServer } from './metrics.ts';
 import type { AppState } from './routes/health.ts';
+import { instrumentPool, startTelemetry } from './telemetry.ts';
 
 export interface RunningServer {
   port: number;
@@ -47,7 +49,19 @@ function close(server: Server): Promise<void> {
 export async function startServer(config: Config, logger?: Logger): Promise<RunningServer> {
   const version = readVersion();
   const log = logger ?? createLogger({ level: config.logLevel, appEnv: config.appEnv, version, gitSha: config.gitSha });
+  const telemetry = startTelemetry({
+    endpoint: config.otlpEndpoint,
+    version,
+    appEnv: config.appEnv,
+    gitSha: config.gitSha,
+    onShutdownError: (err) => {
+      log.warn({ err }, 'the last spans could not be flushed to the OpenTelemetry Collector');
+    },
+  });
   const pool = createPool(config.db, log);
+  if (telemetry.enabled) {
+    instrumentPool(pool, config.db);
+  }
   const metrics = createMetrics();
   const state: AppState = { shuttingDown: false };
   const server = createServer(createApp({ config, pool, logger: log, metrics, state, version }));
@@ -58,7 +72,10 @@ export async function startServer(config: Config, logger?: Logger): Promise<Runn
   const metricsServer = createMetricsServer(metrics);
   const port = await listen(server, config.port);
   const metricsPort = await listen(metricsServer, config.metricsPort);
-  log.info({ port, metricsPort, appEnv: config.appEnv, trustProxyHops: config.trustProxyHops }, 'api listening');
+  log.info(
+    { port, metricsPort, appEnv: config.appEnv, trustProxyHops: config.trustProxyHops, tracing: telemetry.enabled },
+    'api listening',
+  );
 
   let stopping: Promise<void> | undefined;
   const shutdown = (reason: string): Promise<void> => {
@@ -67,6 +84,8 @@ export async function startServer(config: Config, logger?: Logger): Promise<Runn
       log.info({ reason }, 'shutting down: readiness is now 503, waiting for in-flight requests');
       await Promise.all([close(server), close(metricsServer)]);
       await pool.end();
+      // The spans of the last requests leave before the process does.
+      await telemetry.shutdown();
       log.info('shutdown complete');
     })();
     return stopping;

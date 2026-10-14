@@ -27,6 +27,7 @@ A família do lab (v2):
 
 | Repositório | Nuvem | Papel | Status |
 |---|---|---|---|
+| [`tx00v2`](https://github.com/maringelix/tx00v2) | as três | hub da família: roadmap, guardrails da família, checks entre os repositórios | veja a matriz de status dele |
 | [`tx01v2`](https://github.com/maringelix/tx01v2) | AWS | infraestrutura (Terraform, EKS, RDS, camada de plataforma) | veja a matriz de status dele |
 | [`dx01v2`](https://github.com/maringelix/dx01v2) | AWS | aplicação (o mesmo app deste repositório) | veja a matriz de status dele |
 | [`tx02v2`](https://github.com/maringelix/tx02v2) | Azure | infraestrutura (Terraform, AKS, PostgreSQL, camada de plataforma) | veja a matriz de status dele |
@@ -48,12 +49,14 @@ A família do lab (v2):
 | Imagens: build, usuário numérico não root, sem npm nem shell no runtime da API, gate HIGH/CRITICAL do trivy | `verificado no CI` | `make build`; job `images` do CI |
 | Stack do compose (PostgreSQL → migrate → api → web em 127.0.0.1) + smoke test | `verificado localmente` | `scripts/dev-env.sh`, `scripts/compose-smoke.sh` (manual, fora do CI) |
 | Ponta a ponta no kind: Pod Security `restricted`, smoke test pelo nginx, enforcement de NetworkPolicy | `verificado no CI` | `make e2e` (`scripts/e2e-kind.sh`); job `e2e` do CI |
-| Deploy no Google Cloud (push no Artifact Registry, GKE Autopilot do tx03v2, ExternalSecrets do Secret Manager, Gateway da GKE + Cloud Armor, smoke test pelo load balancer) | `não executado em nuvem (v2)` | `.github/workflows/deploy-gcp.yml`, `scripts/deploy-gcp.sh`, `docs/RUNBOOK.md` |
+| Deploy no Google Cloud (push no Artifact Registry, GKE Autopilot do tx03v2, ExternalSecrets do Secret Manager, Gateway da GKE + Cloud Armor, traces para o OpenTelemetry Collector do tx03v2 e o Cloud Trace, smoke test pelo load balancer) | `não executado em nuvem (v2)` | `.github/workflows/deploy-gcp.yml`, `scripts/deploy-gcp.sh`, `docs/RUNBOOK.md` |
 | HTTPS no listener do Gateway | `planejado` | precisa de um certificado; fora do contrato v1 (`docs/CONTRATO.md`) |
 | Overlay `local-platform` para o lab local do tx03v2: render do kustomize + kubeconform estrito, asserções contra o contrato local e os kinds do AppProject `dx03v2`, cinco regras de alerta testadas com promtool | `verificado no CI` | `make static` (`kubeconform`, `contract-app`, `promtool-rules`) num contêiner Linux; job `static` do CI |
 | **O app na plataforma local completa do tx03v2** (kind + Artifact Registry, Cloud SQL, armazenamento de objetos, load balancer e servidor git emulados): imagens no registry do lab, GitOps com Argo CD (Synced, Healthy, self-heal) | `verificado no CI` | `make e2e-platform` (`scripts/deploy-local.sh`, `scripts/e2e-platform.sh`, `docs/LAB_LOCAL.md`); job `e2e-platform` do CI |
 | HTTPS pelo load balancer emulado e um Gateway do Istio (cert-manager, CA do lab), smoke test de fora do mesh (`SMOKE_EDGE=istio`); TLS `verify-full` no banco | `verificado no CI` | `make e2e-platform` (sonda `smoke`) |
-| Istio ambient: mTLS `STRICT`, `AuthorizationPolicy` por identidade, NetworkPolicies com HBONE; Prometheus, dashboard do Grafana, Loki; Gatekeeper, Trivy Operator, HPA 2-4; ensaio de backup + restore do banco; experimento de chaos | `verificado no CI` | `make e2e-platform` (sondas `mesh`, `observability`, `trivy`, `hpa`, `backup`, `chaos`) |
+| Istio ambient: mTLS `STRICT`, `AuthorizationPolicy` por identidade, NetworkPolicies com HBONE; Prometheus, dashboard do Grafana, Loki; Gatekeeper, Trivy Operator, HPA 2-4; ensaio de backup + restore do banco; experimentos de chaos com hipótese (um pod da API morto; 200 ms entre a API e o PostgreSQL) | `verificado no CI` | `make e2e-platform` (sondas `mesh`, `observability`, `trivy`, `hpa`, `backup`, `chaos`) |
+| Traces com OpenTelemetry: um trace no Tempo do Gateway do Istio até a consulta ao PostgreSQL (W3C trace context), `trace_id` nos logs do Loki, exemplars no histograma de latência | `verificado no CI` | testes da API (`telemetry`, `tracing`); `make e2e-platform` (sonda `tracing`) |
+| Rollout sem downtime: uma versão nova pelo GitOps, nenhuma requisição de um leitor falha durante o rolling update | `verificado no CI` | `make e2e-platform` (sonda `rollout`) |
 | Configurações do repositório como código (ruleset, environment `lab`) | `verificado localmente` | `scripts/repo-guardrails.sh` aplicado; conferido com `gh api` em 2026-10-14 (`docs/PUBLICACAO.md`) |
 
 As linhas `verificado no CI` rodam nos jobs do CI da coluna Evidência (`HARNESS_STRICT=1`, em todo
@@ -157,7 +160,7 @@ Toda a documentação está em português do Brasil.
 | [FORK.md](FORK.md) | fork do lab (em inglês): o que o GitHub não copia, o lab local, a sua conta de nuvem |
 | [docs/ARQUITETURA.md](docs/ARQUITETURA.md) | diagramas (local, kind, Google Cloud), decisões, AWS / Azure / Google Cloud, v1 → v2 |
 | [docs/API.md](docs/API.md) | endpoints, erros, exemplos com curl |
-| [docs/CONTRATO.md](docs/CONTRATO.md) | contrato v1 tx03v2 ⇄ dx03v2 (lado do app; fonte da verdade no tx03v2) |
+| [docs/CONTRATO.md](docs/CONTRATO.md) | contrato v2 tx03v2 ⇄ dx03v2 (lado do app; fonte da verdade no tx03v2) |
 | [docs/RUNBOOK.md](docs/RUNBOOK.md) | desenvolvimento local, compose, e2e no kind, deploy no Google Cloud |
 | [docs/LAB_LOCAL.md](docs/LAB_LOCAL.md) | o app na plataforma local do tx03v2 (deploy GitOps, sondas, limites) |
 | [docs/GUARDRAILS.md](docs/GUARDRAILS.md) | regras, onde são aplicadas, exceções, limites |

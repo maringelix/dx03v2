@@ -1,4 +1,4 @@
-# GKE Autopilot (tx03v2, contract v1). Namespace-scoped resources only: the dx03v2 namespace, the
+# GKE Autopilot (tx03v2, contract v2). Namespace-scoped resources only: the dx03v2 namespace, the
 # ClusterSecretStore gcp-secret-manager, External Secrets Operator and the deployer RBAC belong to
 # tx03v2, and the GKE Gateway controller is managed by Google. Values read from the Parameter
 # Manager parameter tx03v2-lab-contract at deploy time (images, the reserved address name, the load
@@ -48,9 +48,14 @@ patches:
       - op: replace
         path: /data/TRUST_PROXY_HOPS
         value: '2'
+      # Traces to the OpenTelemetry Collector of the platform layer of tx03v2 (contract v2), which
+      # writes them to Cloud Trace.
+      - op: add
+        path: /data/OTEL_EXPORTER_OTLP_ENDPOINT
+        value: http://opentelemetry-collector.observability.svc:4318
   # The HPA owns the replica count (2-4); keeping spec.replicas would reset it on every deploy.
   # ConfigMap cloudsql-ca: the Cloud SQL CA bundle of the region, created by scripts/deploy-gcp.sh
-  # after checking its root against contract v1.
+  # after checking its root against the contract.
   - target:
       kind: Deployment
       name: api

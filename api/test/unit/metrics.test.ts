@@ -33,6 +33,8 @@ describe('metrics middleware', () => {
     expect(text).toContain('route="/api/things/:id",status_code="500"');
     expect(text).toContain('route="unmatched",status_code="404"');
     expect(text).not.toContain('12345');
+    // Untraced requests leave no exemplar.
+    expect(text).not.toContain('trace_id');
   });
 });
 
@@ -51,10 +53,12 @@ describe('metrics server', () => {
 
     const ok = await fetch(`${base}/metrics?x=1`);
     expect(ok.status).toBe(200);
-    expect(ok.headers.get('content-type')).toContain('text/plain');
+    // OpenMetrics: the format that carries exemplars (Prometheus negotiates it).
+    expect(ok.headers.get('content-type')).toContain('application/openmetrics-text');
     const body = await ok.text();
     expect(body).toContain('process_cpu_user_seconds_total');
     expect(body).toContain('# HELP http_request_duration_seconds');
+    expect(body.trimEnd().endsWith('# EOF')).toBe(true);
 
     expect((await fetch(`${base}/other`)).status).toBe(404);
     expect((await fetch(`${base}/metrics`, { method: 'POST' })).status).toBe(404);
