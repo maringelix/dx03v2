@@ -6,6 +6,17 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Security
+
+- The integration tests drop and recreate tables (`messages`, `schema_migrations`), and with
+  `DB_HOST` set the harness ran them against whatever database `DB_*` pointed at, such as the
+  development database of `docs/RUNBOOK.md`. They now refuse a `DB_NAME` that does not end in `_test`,
+  both in `api/test/integration/helpers.ts` (`requireTestDatabase`, new unit test `test-database`) and
+  in `scripts/harness.sh`; `docs/RUNBOOK.md` shows a separate `dx03v2_test` database.
+- `scripts/deploy-local.sh` refuses any kube context but `kind-tx03v2-local`: a cluster of whoever runs
+  it, left in the current context, never receives the deploy.
+- `deploy/local/tx03v2.ref` follows tx03v2 to the commit where its scripts act only on the lab.
+
 ### Changed
 
 - The family table of both READMEs links the family hub `tx00v2` (roadmap, family guardrails,

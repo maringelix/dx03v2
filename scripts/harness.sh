@@ -916,7 +916,12 @@ check_test_api() {
   need node npx
   [[ -d node_modules ]] || skip "node_modules is missing (check npm-ci)"
   if [[ -n "${DB_HOST:-}" ]]; then
-    echo "integration tests use the database from DB_* (DB_HOST=$DB_HOST)"
+    # The integration tests drop and recreate tables: never against DB_* exported for other work.
+    [[ "${DB_NAME:-}" =~ ^[A-Za-z0-9_]+_test$ ]] || {
+      echo "DB_HOST is set, but DB_NAME '${DB_NAME:-}' does not end in _test: the integration tests drop and recreate tables, so they run only against a test database (unset DB_HOST and the harness starts a throwaway PostgreSQL)"
+      return 1
+    }
+    echo "integration tests use the database from DB_* (DB_HOST=$DB_HOST, DB_NAME=$DB_NAME)"
     run_vitest api
     return
   fi

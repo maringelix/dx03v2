@@ -32,6 +32,9 @@ export KUBECONFIG="$(bash ../tx03v2/scripts/local-lab.sh kubeconfig)"
 GIT_SHA=$(git rev-parse HEAD) scripts/deploy-local.sh
 ```
 
+O `scripts/deploy-local.sh` recusa qualquer contexto do kubectl que não seja `kind-tx03v2-local`: um
+cluster seu que esteja no contexto atual nunca recebe o deploy.
+
 ## Como o deploy funciona (`scripts/deploy-local.sh`)
 
 1. Lê o contrato local `lab-system/lab-contract` (versão 2) e recusa valores diferentes dos fixados no

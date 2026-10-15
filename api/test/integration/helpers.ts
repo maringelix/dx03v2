@@ -14,6 +14,21 @@ export const ADMIN_TOKEN = 'integration-admin-token-0123456789abcdef';
 
 export const silentLogger: Logger = pino({ level: 'silent' });
 
+/**
+ * The integration tests drop and recreate tables (resetDatabase, migrations.test.ts): they run only
+ * against a database whose name ends in _test, never against DB_* exported for other work (a
+ * development or production database of whoever runs them).
+ */
+export function requireTestDatabase(name: string | undefined): string {
+  if (name === undefined || !/^\w+_test$/.test(name)) {
+    throw new Error(
+      `integration tests drop and recreate tables: DB_NAME must end in _test (got ${JSON.stringify(name ?? '')}); ` +
+        'unset DB_HOST and run `scripts/harness.sh test`, which starts a throwaway PostgreSQL',
+    );
+  }
+  return name;
+}
+
 export function testConfig(overrides: NodeJS.ProcessEnv = {}): Config {
   for (const key of ['DB_HOST', 'DB_NAME', 'DB_USER', 'DB_PASSWORD']) {
     if (!process.env[key]) {
@@ -23,6 +38,7 @@ export function testConfig(overrides: NodeJS.ProcessEnv = {}): Config {
       );
     }
   }
+  requireTestDatabase(process.env.DB_NAME);
   return loadConfig({
     APP_ENV: 'ci',
     LOG_LEVEL: 'silent',

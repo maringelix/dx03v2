@@ -33,10 +33,17 @@ docker rm -f dx03v2-dev-pg         # ao terminar
 ```
 
 Comandos úteis: `npm run lint`, `npm run typecheck`, `npm run format`, `npm run build`; testes:
-`npm run test:coverage --workspace api` (usa o banco de `DB_*` e **apaga e recria as tabelas**: só
-com um banco descartável como o acima) e `npm run test:coverage --workspace web`. O gate completo é
-`HARNESS_STRICT=1 make verify` (com `DB_*` exportadas ele usa esse banco; sem elas, sobe um
-PostgreSQL descartável).
+`npm run test:coverage --workspace web` e, para a API, que usa o banco de `DB_*` e **apaga e recria
+as tabelas**, um banco cujo nome termina em `_test` (os testes recusam qualquer outro nome):
+
+```bash
+docker exec dx03v2-dev-pg createdb -U dx03v2 dx03v2_test
+DB_NAME=dx03v2_test npm run test:coverage --workspace api
+```
+
+O gate completo é `HARNESS_STRICT=1 make verify`: sem `DB_HOST` ele sobe um PostgreSQL descartável;
+com `DB_*` exportadas, usa esse banco e recusa um `DB_NAME` que não termine em `_test` (neste shell:
+`env -u DB_HOST HARNESS_STRICT=1 make verify`).
 
 ## 3. Stack do compose (projeto `dx03v2-dev`)
 

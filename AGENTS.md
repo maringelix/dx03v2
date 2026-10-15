@@ -95,7 +95,8 @@ FORK.md                 how to fork the lab: what GitHub does not copy, the loca
 - Windows/macOS: open the repo in the devcontainer (Node.js 24 + Docker-in-Docker; it runs
   `make tools`). macOS without the devcontainer: `brew install bash`.
 - The integration tests need PostgreSQL: set `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`,
-  `DB_PASSWORD`, or let the harness start a throwaway `postgres:17-alpine` container.
+  `DB_PASSWORD`, or let the harness start a throwaway `postgres:17-alpine` container. They drop and
+  recreate tables, so they refuse a `DB_NAME` that does not end in `_test`.
 - No cloud credentials are needed for anything except `deploy-gcp`: the Google Cloud CLI with
   `gke-gcloud-auth-plugin` (installed by the workflow, or `gcloud auth login` on a laptop),
   `GCP_PROJECT_ID`, Docker with buildx and kubectl from `.tools`.
