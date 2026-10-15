@@ -65,6 +65,9 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- `scripts/deploy-local.sh` waits until each Deployment has the expected image tag before checking its
+  rollout, so Argo CD sync status cannot make the previous image look like the new release.
+
 - `scripts/deploy-local.sh` waits for the Argo CD sync of the commit it pushed: on a redeploy the
   Application was still Synced and Healthy on the previous commit, and the script went on too early.
 

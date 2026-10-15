@@ -184,10 +184,22 @@ wait_sync() {
   die "Argo CD did not reach Synced/Healthy within ${SYNC_TIMEOUT}s"
 }
 
+wait_for_image() {
+  local deploy="$1" expected="${C["registry"]}/dx03v2/$1:$GIT_SHA" actual="" attempt
+  for attempt in $(seq 1 $((SYNC_TIMEOUT / 5))); do
+    actual="$(kubectl -n "$NAMESPACE" get deployment "$deploy" -o jsonpath='{.spec.template.spec.containers[0].image}')"
+    [[ "$actual" == "$expected" ]] && return 0
+    sleep 5
+  done
+  die "rollout: deployment/$deploy still uses ${actual:-no image}; expected $expected"
+}
+
 wait_workloads() {
   local ip
   kubectl -n "$NAMESPACE" wait --for=condition=Ready externalsecret/db-credentials externalsecret/app-secrets --timeout=180s >/dev/null
+  wait_for_image api
   kubectl -n "$NAMESPACE" rollout status deployment/api --timeout="${SYNC_TIMEOUT}s"
+  wait_for_image web
   kubectl -n "$NAMESPACE" rollout status deployment/web --timeout="${SYNC_TIMEOUT}s"
   kubectl -n "$NAMESPACE" wait --for=condition=Programmed gateway/dx03v2 --timeout="${SYNC_TIMEOUT}s" >/dev/null
   ip="$(kubectl -n "$NAMESPACE" get gateway dx03v2 -o jsonpath='{.status.addresses[0].value}')"
