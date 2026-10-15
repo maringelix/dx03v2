@@ -5,7 +5,7 @@ SHELL := bash
 
 HARNESS := bash scripts/harness.sh
 
-.PHONY: help tools static test verify build e2e e2e-platform all clean
+.PHONY: help tools static test verify build e2e e2e-platform e2e-platform-small all clean
 
 help: ## Show the available targets
 	@awk 'BEGIN { FS = ":.*## " } /^[a-z][a-z0-9-]*:.*## / { printf "  %-8s %s\n", $$1, $$2 }' $(MAKEFILE_LIST)
@@ -30,6 +30,9 @@ e2e: ## kind cluster dx03v2-e2e: deploy, smoke test, NetworkPolicy probes (needs
 
 e2e-platform: ## The app on the full tx03v2 local platform: deploy through Argo CD + probes (needs Docker, 8 GB)
 	@$(HARNESS) platform
+
+e2e-platform-small: ## The same e2e on the small platform size inside Docker limited to 7 GB (heavy: CI only)
+	@$(HARNESS) platform-small
 
 all: ## Every stage: static + test + build + e2e
 	@$(HARNESS) all
