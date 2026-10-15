@@ -60,7 +60,10 @@ lê-la; senão, a condição `Programmed` do Gateway é a prova.
 Pool `tx03v2-github`, provider `github` (issuer `https://token.actions.githubusercontent.com`,
 condição restrita ao dono e aos repositórios `tx03v2` e `dx03v2`). A conta de serviço
 `dx03v2-gha-deploy` tem `roles/iam.workloadIdentityUser` só para o sujeito exato
-`repo:<owner>/dx03v2:environment:lab` (dono configurável no tx03v2, `github_owner`, sem padrão). Por isso o
+`repo:<owner>@<id do dono>/dx03v2@<id do repositório>:environment:lab` (o `sub` imutável do GitHub; dono e
+IDs configuráveis no tx03v2: `github_owner`, `github_owner_id`, `dx03v2_repository_id`, sem padrão; um nome
+de conta apagado e registrado de novo tem outros IDs e não herda o lab). O environment `lab` só implanta
+a partir de `main`. Por isso o
 job do `deploy-gcp.yml` usa `environment: lab` (o check `policy-workflows` exige), e o provider vira a
 variável `GCP_WORKLOAD_IDENTITY_PROVIDER`
 (`projects/<número>/locations/global/workloadIdentityPools/tx03v2-github/providers/github`).

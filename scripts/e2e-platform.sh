@@ -16,7 +16,9 @@
 # KEEP_LAB=1, LOCAL_KIND_INTERNAL=1 (inside a container that drives the host Docker daemon),
 # LOCAL_SIZE=small (the size of the tx03v2 platform for 7 GB of Docker memory, proved in the CI by
 # scripts/e2e-platform-small.sh; docs/LAB_LOCAL.md), E2E_DIAGNOSTICS_DIR (default
-# ${TMPDIR:-/tmp}/dx03v2-harness/platform-diagnostics).
+# ${TMPDIR:-/tmp}/dx03v2-harness/platform-diagnostics), LOCAL_STATE_DIR (the state of the lab this
+# script creates; default ${XDG_STATE_HOME:-$HOME/.local/state}/dx03v2-platform-local, not the one of
+# `make local-up` in tx03v2: a lab you keep there is never adopted and destroyed by this run).
 set -euo pipefail
 
 # shellcheck source=scripts/lib/common.sh
@@ -31,6 +33,7 @@ TX03V2_REPO="${TX03V2_REPO:-https://github.com/maringelix/tx03v2.git}"
 DIAG_DIR="${E2E_DIAGNOSTICS_DIR:-${TMPDIR:-/tmp}/dx03v2-harness/platform-diagnostics}"
 CURL_IMAGE="curlimages/curl:8.22.0@sha256:58adaa4e8dca9c988bae2aba4ab3434a0bb2da16bbe3f92dec39ec7785166777"
 WORK_DIR=""
+LAB_KUBECONFIG=""
 TX=""
 PASSED=0
 GIT_SHA=""
@@ -44,7 +47,9 @@ lab() { bash "$TX/scripts/local-lab.sh" "$@"; }
 
 cleanup() {
   local rc=$?
-  if ((rc != 0)) && [[ -n "$TX" ]] && kubectl version >/dev/null 2>&1; then
+  # Diagnostics only through the kubeconfig of the lab (set once it exists): the current context of
+  # the machine is never read, and no cluster of yours ends up in a public artifact.
+  if ((rc != 0)) && [[ -n "$LAB_KUBECONFIG" ]] && kubectl version >/dev/null 2>&1; then
     k8s_dump_diagnostics "$NAMESPACE" "$DIAG_DIR"
     kubectl -n argocd get application dx03v2 -o yaml >"$DIAG_DIR/argocd-application.yaml" 2>&1 || :
     kubectl get pods --all-namespaces -o wide >"$DIAG_DIR/all-pods.txt" 2>&1 || :
@@ -650,12 +655,15 @@ main() {
   log "platform size: $LOCAL_SIZE"
   WORK_DIR="$(mktemp -d)"
   trap cleanup EXIT
+  # Until the lab exists, no kubectl call of this script can reach a cluster of the machine.
+  export KUBECONFIG="$WORK_DIR/no-cluster"
+  export LOCAL_STATE_DIR="${LOCAL_STATE_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}/dx03v2-platform-local}"
   GIT_SHA="$(git -C "$REPO_ROOT" rev-parse --verify -q HEAD || printf '%040d' 0)"
   prepare_tx03v2
   build_images
   lab up
-  KUBECONFIG="$(lab kubeconfig | tail -n 1)"
-  export KUBECONFIG
+  LAB_KUBECONFIG="$(lab kubeconfig | tail -n 1)"
+  export KUBECONFIG="$LAB_KUBECONFIG"
   GIT_SHA="$GIT_SHA" DEPLOY_ALLOW_DIRTY=1 bash "$REPO_ROOT/scripts/deploy-local.sh"
   pass "gitops: deploy-local pushed the images and the manifests; Argo CD synced dx03v2 (Synced, Healthy)"
   probe_namespace

@@ -23,7 +23,12 @@ README, AGENTS.md and CONTRIBUTING.md are in English.
    scripts/repo-guardrails.sh <you>/dx03v2   # and the same in tx03v2
    ```
 
-   Here the ruleset requires `static`, `test`, `images`, `e2e` and `e2e-platform`.
+   Here the ruleset requires `static`, `test`, `images`, `e2e` and `e2e-platform`. The script also
+   protects the environment `lab` (it fails, instead of skipping, when it cannot: the cloud
+   workflows take their credentials through it), and it checks that the OIDC subject of the
+   repository is the immutable one, with the owner and repository IDs that the tx03v2 bootstrap
+   trusts (it prints the IDs). A repository that predates 2026-07-15 must opt in to immutable
+   subject claims first (Settings > Actions > General > OpenID Connect).
 
 ## 4. Run the app locally (free)
 

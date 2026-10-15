@@ -617,6 +617,13 @@ check_policy_app() {
   forbid 'console\.(log|error|warn|info)' "the API logs through pino only" '*.ts' api/src || rc=1
   forbid 'localStorage|sessionStorage|document\.cookie' "the admin token stays in memory only" '*.ts*' web/src || rc=1
   forbid 'Strict-Transport-Security "max-age' "HSTS only through the map (HTTPS requests)" '*.conf' web/nginx || rc=1
+  # A destination that is empty must stop the script, not delete what the path then resolves to.
+  forbid 'rm -rf "\$[A-Za-z_]+"' "rm -rf of a bare variable in scripts/lib/k8s.sh: use the :? parameter expansion so an empty value stops the script" 'k8s.sh' scripts/lib || rc=1
+  # The registry login of the deploy goes to a Docker configuration directory of its own: it never writes ~/.docker.
+  grep -qE '^  private_docker_config$' scripts/deploy-gcp.sh || {
+    echo "scripts/deploy-gcp.sh must call private_docker_config (a temporary DOCKER_CONFIG) before the registry login"
+    rc=1
+  }
   local loc includes
   loc="$(grep -cE '^[[:space:]]*location ' web/nginx/default.conf)"
   includes="$(grep -cE '^[[:space:]]*include /etc/nginx/snippets/security-headers\.conf;' web/nginx/default.conf)"
@@ -822,7 +829,7 @@ check_contract_deploy_script() {
   fi
   # shellcheck disable=SC2016 # literal lines of the deploy script, not expansions
   for line in '--dns-endpoint' 'SMOKE_EDGE=gke' 'docker login -u oauth2accesstoken --password-stdin' \
-    'mask "$(param deploy/service-account)"' 'mask "$GCP_PROJECT_ID"' 'mask "$token"' \
+    'mask "$(param deploy/service-account)"' 'mask "$GCP_PROJECT_ID"' 'ADMIN_TOKEN=""' \
     '[[ "$(param project-id)" == "$GCP_PROJECT_ID" ]]' 'ipv4_in_cidr "$(param db/endpoint-ip)" "$(param nodes-subnet-cidr)"' \
     '[[ "$GATEWAY_ADDRESS" == "$(param gateway/address)" ]]' 'healthcheckpolicies.networking.gke.io' 'gcpbackendpolicies.networking.gke.io'; do
     grep -qF -- "$line" "$deploy" || {

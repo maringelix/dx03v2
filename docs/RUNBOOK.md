@@ -146,7 +146,11 @@ Federation (`google-github-actions/auth` v3.0.0), instala o gcloud 588.0.0 com o
 8. espera os ExternalSecrets `db-credentials` e `app-secrets`, os rollouts e o Gateway `Programmed`
    no endereço `gateway/address`, e registra as condições da HTTPRoute e das políticas;
 9. roda `e2e/smoke.mjs` pelo load balancer com `SMOKE_EDGE=gke` (até 15 minutos de espera,
-   `SMOKE_WAIT_SECONDS`) e escreve o resumo do job.
+   `SMOKE_WAIT_SECONDS`) e escreve o resumo do job. O Gateway do lab só fala HTTP (HTTPS nas nuvens
+   está fora do escopo da v2): o token de admin não é lido nem enviado, e o smoke test pula a chamada
+   `DELETE` com o token (`SKIP` no resumo); as chamadas com token errado rodam. O login do Artifact
+   Registry fica num diretório de configuração do Docker temporário (`DOCKER_CONFIG`): o seu
+   `~/.docker/config.json` não é tocado.
 
 A partir de um laptop (working tree limpo e no commit que você quer publicar, porque a tag é o SHA):
 

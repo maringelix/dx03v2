@@ -8,6 +8,28 @@ All notable changes to this project are documented here. The format follows
 
 ### Security
 
+- `deploy/local/tx03v2.ref` pins the local platform to the merged tx03v2 R3 commit, so
+  `e2e-platform` and `family-ref` check the integrated infrastructure.
+
+- The smoke test never sends the admin token over plain HTTP to another machine (roadmap R3.17): it
+  is sent over HTTPS or to `127.0.0.1`; on any other plain HTTP entry point, such as the Google Cloud lab
+  (the load balancer of the Gateway answers HTTP only), the one call that needs it is skipped (`SKIP` in the
+  output) and `scripts/deploy-gcp.sh` does not even read the token.
+- `scripts/repo-guardrails.sh` (same file in the six lab repositories, roadmap R3.15 and R3.18) fails
+  instead of skipping when it cannot protect the environment `lab`, leaves only `main` in it, reads it
+  back, fails when the OIDC subject of the repository is name-based (the cloud trust expects the
+  immutable one with the owner and repository IDs) and refuses an argument that is not the
+  repository of the clone.
+- `scripts/e2e-platform.sh` keeps the state of its lab in a directory of its own, so a lab you keep
+  with `make local-up` in tx03v2 is never adopted and destroyed by it, and reads diagnostics only
+  through the kubeconfig of the lab: until the lab exists, `kubectl` has no cluster to reach.
+- `make clean` removes things only under the directory of the Makefile, wherever make was started
+  from (roadmap R3.18).
+- `scripts/lib/k8s.sh` stops when the destination of `rm -rf` is empty (`${dest:?}`, `${tmp:?}`); the
+  `policy-app` check keeps a bare variable from coming back there (roadmap R3.18).
+- `scripts/deploy-gcp.sh` keeps the Artifact Registry login in a temporary Docker configuration
+  directory (`DOCKER_CONFIG`), so `~/.docker/config.json` is never written and the token of the run goes
+  away with the directory (roadmap R3.18); the `policy-app` check keeps it that way.
 - The integration tests drop and recreate tables (`messages`, `schema_migrations`), and with
   `DB_HOST` set the harness ran them against whatever database `DB_*` pointed at, such as the
   development database of `docs/RUNBOOK.md`. They now refuse a `DB_NAME` that does not end in `_test`,
@@ -42,6 +64,9 @@ All notable changes to this project are documented here. The format follows
   too (ported on 2026-10-12).
 
 ### Fixed
+
+- `scripts/deploy-local.sh` waits until each Deployment has the expected image tag before checking its
+  rollout, so Argo CD sync status cannot make the previous image look like the new release.
 
 - `scripts/deploy-local.sh` waits for the Argo CD sync of the commit it pushed: on a redeploy the
   Application was still Synced and Healthy on the previous commit, and the script went on too early.

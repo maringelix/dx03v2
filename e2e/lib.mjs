@@ -111,6 +111,7 @@ export function assertEqual(actual, expected, what) {
 export class Runner {
   passed = 0;
   failed = 0;
+  skipped = 0;
 
   async check(name, fn) {
     const start = Date.now();
@@ -124,8 +125,15 @@ export class Runner {
     }
   }
 
+  /** A check that is not run, with the reason; it counts as neither passed nor failed. */
+  skip(name, reason) {
+    this.skipped++;
+    console.log(`SKIP ${name}: ${reason}`);
+  }
+
   finish() {
-    console.log(`smoke: ${this.passed} passed, ${this.failed} failed`);
+    const skipped = this.skipped > 0 ? `, ${this.skipped} skipped` : '';
+    console.log(`smoke: ${this.passed} passed, ${this.failed} failed${skipped}`);
     process.exitCode = this.failed === 0 ? 0 : 1;
   }
 }
