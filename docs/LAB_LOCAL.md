@@ -56,7 +56,7 @@ merge é o `e2e-platform` no tamanho padrão.
 | Plataforma `full` + app | Docker | Resultado |
 |---|---|---|
 | tamanho padrão | runner do CI, 16 GB | passa (job `e2e-platform`) |
-| tamanho `small` | 7 GB, sem swap (CI, 2026-10-15) | passa: as 18 sondas em cerca de 13 minutos, memória anônima de 4,40 GiB. O kernel matou duas vezes a cópia do plugin do Velero na instalação (init container BestEffort, que o kubelet roda de novo) |
+| tamanho `small` | 7 GB, sem swap (CI, 2026-10-15) | passa: as 18 sondas em cerca de 13 minutos, memória anônima de 4,40 GiB. Em uma das duas rodadas desta prova, o kernel matou duas vezes a cópia do plugin do Velero na instalação (init container BestEffort, que o kubelet roda de novo) |
 
 O par 01 mediu também o tamanho padrão em 7 GB (falha por thrashing) e o `small` em 6 GB (a sonda de
 rollout perde requisições) e em 8 GB (passa): `docs/LAB_LOCAL.md` do dx01v2. A meta da R1.8 era 6 GB;

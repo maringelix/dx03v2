@@ -53,10 +53,10 @@ All notable changes to this project are documented here. The format follows
   smaller memory limits, short retention and fewer series and workers. `make e2e-platform-small` (CI
   job `e2e-platform-small`, not a required check) runs the 18 probes inside a Docker-in-Docker limited
   to 7 GB without swap and reports the peak memory, the largest containers and any OOM kill. Measured
-  on 2026-10-15: the 18 probes pass at 7 GB in about 13 minutes (4.40 GiB of anonymous memory; the
-  kernel killed the plugin copy of Velero twice during the install, an init container the kubelet runs
-  again); the goal of the roadmap was 6 GB, and the size stays at 7 GB (decision of Bruno).
-  `deploy/local/tx03v2.ref` follows tx03v2 to the commit with the sizes.
+  on 2026-10-15: the 18 probes pass at 7 GB in about 13 minutes (4.40 GiB of anonymous memory; in one
+  of the two runs the kernel killed the plugin copy of Velero twice during the install, an init
+  container the kubelet runs again); the goal of the roadmap was 6 GB, and the size stays at 7 GB
+  (decision of Bruno). `deploy/local/tx03v2.ref` follows tx03v2 to the commit with the sizes.
 - Traces with OpenTelemetry, ported from `dx01v2` (same `api/` code, names only): a SERVER span per
   request (named after the route) and a CLIENT span per PostgreSQL query inside it (parameterized SQL
   only), W3C `traceparent` continued, OTLP/HTTP to `OTEL_EXPORTER_OTLP_ENDPOINT` (off without it).
