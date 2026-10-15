@@ -22,7 +22,8 @@ is the source of truth. The full rule list (pt-BR) is [docs/GUARDRAILS.md](docs/
   ambient, Argo CD, Prometheus, Loki, Tempo and the OpenTelemetry Collector, Gatekeeper, Trivy
   Operator, chaos): overlay `local-platform`, `scripts/deploy-local.sh` and `make e2e-platform` (CI job
   `e2e-platform`, [docs/LAB_LOCAL.md](docs/LAB_LOCAL.md)); the platform e2e is `verified in CI` (18
-  probes). It is not cloud-mutating: agents may run it, one heavy run at a time (Docker with 8 GB).
+  probes). It is not cloud-mutating: agents may run it, one heavy run at a time (Docker with 8 GB, or 7 GB with
+  `LOCAL_SIZE=small`; `make e2e-platform-small` is meant for the CI runner).
 - The interface with `tx03v2` is [docs/CONTRATO.md](docs/CONTRATO.md) (contract v2, owned by tx03v2; the
   local lab has its own local contract, `lab-system/lab-contract`).
 
@@ -68,14 +69,15 @@ deploy/k8s/schemas/     kubeconform schemas: Gateway API from the release asset,
                         from a pinned catalog commit (scripts/update-crd-schemas.sh, never by hand)
 kind/                   kind-config.yaml (node image pinned by digest)
 compose.yaml            local stack dx03v2-dev; .env from scripts/dev-env.sh (.env.example has placeholders)
-scripts/harness.sh      every check of the harness (stages static, test, build, e2e, platform, all, list)
+scripts/harness.sh      every check of the harness (stages static, test, build, e2e, platform, platform-small, all, list)
 scripts/install-tools.sh            pinned tools into .tools/ (SHA256-verified)
 scripts/update-tool-checksums.sh    bump a tool: versions.env + checksums.txt from upstream checksums
 scripts/update-crd-schemas.sh       regenerate or check deploy/k8s/schemas (crd-to-jsonschema.mjs converts)
 scripts/e2e-kind.sh     kind e2e (cluster dx03v2-e2e); scripts/compose-smoke.sh, scripts/dev-env.sh
 scripts/deploy-gcp.sh   Google Cloud deploy (cloud-mutating; used by .github/workflows/deploy-gcp.yml)
 scripts/deploy-local.sh GitOps deploy to the tx03v2 local lab (registry, GitOps repository, Argo CD)
-scripts/e2e-platform.sh the app on the full local platform + probes (stage platform)
+scripts/e2e-platform.sh the app on the full local platform + probes (stage platform; LOCAL_SIZE=small)
+scripts/e2e-platform-small.sh       the same e2e at the small size in Docker limited to 7 GB (stage platform-small)
 deploy/local/           tx03v2.ref: the tx03v2 commit the platform e2e uses
 scripts/render-k8s.sh   render an overlay without touching the repo; check-manifests.mjs asserts the contract
 scripts/check-build-context.mjs     proves that every Docker build context leaves gha-creds-*.json out
@@ -112,6 +114,7 @@ FORK.md                 how to fork the lab: what GitHub does not copy, the loca
 | `make build` | npm build, both images, image policy, trivy image gate (CI job `images`) | code, Dockerfile or dependency changes |
 | `make e2e` | kind cluster, smoke test, Pod Security and NetworkPolicy probes (CI job `e2e`) | manifest, image or app changes |
 | `make e2e-platform` | the app on the full tx03v2 local platform through GitOps + probes (CI job `e2e-platform`) | manifest, image or app changes |
+| `make e2e-platform-small` | the same e2e at the small platform size inside Docker limited to 7 GB (CI job `e2e-platform-small`) | heavy: CI only |
 | `scripts/harness.sh list` | lists all checks | any time |
 
 ## 6. Definition of Done

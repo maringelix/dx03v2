@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # dx03v2 harness: every check lives here. `make` targets and every CI job only call this script.
-# Usage: scripts/harness.sh <stage>...   stages: static, test, build, e2e, platform, all, list
+# Usage: scripts/harness.sh <stage>...   stages: static, test, build, e2e, platform, platform-small, all, list
 #   HARNESS_STRICT=1   (set in CI) turns every SKIP into a FAIL
 #   HARNESS_VERBOSE=1  also prints the output of passing checks
 #   HARNESS_ONLY=<re>  runs only the checks whose name matches (local debugging; never in CI)
@@ -10,6 +10,7 @@
 #   IMAGE_TAG          tag of the images built/scanned/loaded (default: e2e)
 #   IMAGES_PREBUILT=1  stage build: check images built elsewhere (CI) instead of building them
 #   E2E_SKIP_BUILD=1, KEEP_CLUSTER=1: see scripts/e2e-kind.sh; TX03V2_DIR, TX03V2_REPO, KEEP_LAB=1: scripts/e2e-platform.sh
+#   SMALL_MEMORY: scripts/e2e-platform-small.sh
 # Prints "PASS|FAIL|SKIP <check> (<secs>s)" per check and a summary; exits 1 on any FAIL.
 set -euo pipefail
 
@@ -1063,6 +1064,13 @@ check_platform_e2e() {
   bash scripts/e2e-platform.sh
 }
 
+# Heavy (Docker-in-Docker with 7 GB): meant for the CI runner, never part of `all`.
+check_platform_small_e2e() {
+  need tar
+  need_docker
+  bash scripts/e2e-platform-small.sh
+}
+
 # The alert rules of the local-platform component, tested with promtool (series the API exports and
 # kube-state-metrics; docs/HARNESS.md).
 check_promtool_rules() {
@@ -1118,6 +1126,7 @@ register_checks() {  register static tool-versions check_tool_versions
   register build trivy-image:web "check_trivy_image web"
   register e2e kind-e2e check_kind_e2e
   register platform platform-e2e check_platform_e2e
+  register platform-small platform-small-e2e check_platform_small_e2e
 }
 
 # ---------------------------------------------------------------------------------------------
@@ -1184,6 +1193,7 @@ list_checks() {
   echo "  build   npm build, docker images, image policy, trivy image gate (HIGH/CRITICAL, fixable)"
   echo "  e2e     kind cluster: manifests, PSA restricted, smoke test, NetworkPolicy enforcement"
   echo "  platform the app on the full tx03v2 local platform (GitOps, mesh, observability, policies, backup, chaos)"
+  echo "  platform-small the same e2e on the small platform size, inside Docker limited to 7 GB (heavy: CI only)"
   echo "  all     static + test + build + e2e"
   echo "checks:"
   for i in "${!CHECK_NAME[@]}"; do
@@ -1192,7 +1202,7 @@ list_checks() {
 }
 
 usage() {
-  echo "usage: $0 <stage>...   (stages: static, test, build, e2e, platform, all, list)" >&2
+  echo "usage: $0 <stage>...   (stages: static, test, build, e2e, platform, platform-small, all, list)" >&2
   exit 2
 }
 
@@ -1204,7 +1214,7 @@ main() {
   register_checks
   for arg in "$@"; do
     case "$arg" in
-      static | test | build | e2e | platform) stages+=("$arg") ;;
+      static | test | build | e2e | platform | platform-small) stages+=("$arg") ;;
       all) stages+=(static test build e2e) ;;
       list)
         list_checks

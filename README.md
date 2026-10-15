@@ -56,6 +56,7 @@ The lab family (v2):
 | Istio ambient: mTLS `STRICT`, `AuthorizationPolicy` by identity, NetworkPolicies with HBONE; Prometheus, Grafana dashboard, Loki; Gatekeeper, Trivy Operator, HPA 2-4; database backup + restore drill; chaos experiments with hypotheses (one API pod killed; 200 ms between the API and PostgreSQL) | `verified in CI` | `make e2e-platform` (probes `mesh`, `observability`, `trivy`, `hpa`, `backup`, `chaos`) |
 | Traces with OpenTelemetry: one trace in Tempo from the Istio Gateway to the PostgreSQL query (W3C trace context), `trace_id` in the logs in Loki, exemplars in the latency histogram | `verified in CI` | API tests (`telemetry`, `tracing`); `make e2e-platform` (probe `tracing`) |
 | Zero-downtime rollout: a new version through GitOps, no failed request from a reader during the rolling update | `verified in CI` | `make e2e-platform` (probe `rollout`) |
+| The same 18 probes in 7 GB of Docker memory: the platform at the small size (`LOCAL_SIZE=small`), inside a Docker-in-Docker without swap | `verified in CI` | `make e2e-platform-small` (`scripts/e2e-platform-small.sh`); CI job `e2e-platform-small` |
 | Repository settings as code (ruleset, environment `lab`) | `verified locally` | `scripts/repo-guardrails.sh` applied; read back with `gh api` on 2026-10-14 (`docs/PUBLICACAO.md`) |
 
 `verified in CI` rows run in the CI jobs of the Evidence column (`HARNESS_STRICT=1`, on every pull
@@ -141,7 +142,8 @@ through the load balancer → tx03v2 destroy + leftover check → `cloud_run_rep
 | `make verify` | static + test | before every PR |
 | `make build` | `scripts/harness.sh build`: npm build, images, image policy, trivy gate | when code, Dockerfiles or dependencies change |
 | `make e2e` | `scripts/harness.sh e2e`: kind cluster, smoke test, NetworkPolicy probes | when manifests, images or the app change |
-| `make e2e-platform` | `scripts/harness.sh platform`: the app on the full tx03v2 local platform (clones tx03v2 at `deploy/local/tx03v2.ref`), always torn down (CI job `e2e-platform`) | manifest, image or app changes; needs Docker with 8 GB |
+| `make e2e-platform` | `scripts/harness.sh platform`: the app on the full tx03v2 local platform (clones tx03v2 at `deploy/local/tx03v2.ref`), always torn down (CI job `e2e-platform`) | manifest, image or app changes; needs Docker with 8 GB, or 7 GB with `LOCAL_SIZE=small` |
+| `make e2e-platform-small` | `scripts/harness.sh platform-small`: the same e2e at the small size inside a Docker limited to 7 GB, with the peak memory and any OOM kill in the job summary (CI job `e2e-platform-small`) | heavy, meant for the CI runner; on a laptop run `LOCAL_SIZE=small make e2e-platform` |
 | `make all` | every stage | before a release-like merge |
 | `make clean` | removes `.tools/`, build output, coverage, `node_modules` and scratch data | — |
 

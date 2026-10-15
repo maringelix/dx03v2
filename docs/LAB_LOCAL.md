@@ -7,23 +7,26 @@ Cloud Storage (por um emulador da API do S3), load balancer e servidor git emula
 (`docs/LAB_LOCAL.md` do tx03v2). Este repositório faz o deploy do app nela do jeito GitOps e prova o
 comportamento com sondas. Nada aqui fala com o Google Cloud.
 
-Status: `verificado no CI` (job `e2e-platform`, 18 sondas) e `verificado localmente` em 2026-10-13 (as
-13 sondas de então, rodada do zero na plataforma local do tx03v2, lab destruído sem sobras). As cinco
-sondas de 2026-10-14 (traces, rollout e chaos do banco) só rodaram no CI: a plataforma `full` com o app
-passa dos 7,65 GiB de memória do Docker Desktop usado aqui.
+Status: `verificado no CI` (job `e2e-platform`, 18 sondas, tamanho padrão; job `e2e-platform-small`, as
+mesmas 18 sondas no tamanho `small` com o Docker limitado a 7 GB) e `verificado localmente` em
+2026-10-13 (as 13 sondas de então, rodada do zero na plataforma local do tx03v2, lab destruído sem
+sobras). As cinco sondas de 2026-10-14 (traces, rollout e chaos do banco) só rodaram no CI: a
+plataforma `full` com o app passa dos 7,65 GiB de memória do Docker Desktop usado aqui no tamanho
+padrão; no tamanho `small`, cabe em 7 GB (abaixo).
 
 ## Como rodar
 
 ```bash
-make build           # imagens dx03v2-api:e2e e dx03v2-web:e2e (ou deixe o e2e construir)
-make e2e-platform    # sobe o lab do tx03v2, faz o deploy, roda as sondas e destrói tudo
+make build                          # imagens dx03v2-api:e2e e dx03v2-web:e2e (ou deixe o e2e construir)
+make e2e-platform                   # sobe o lab do tx03v2, faz o deploy, roda as sondas e destrói tudo
+LOCAL_SIZE=small make e2e-platform  # o mesmo, com a plataforma no tamanho small (Docker com 7 GB)
 ```
 
 O script clona o tx03v2 no commit de `deploy/local/tx03v2.ref`; com `TX03V2_DIR=<checkout>` ele usa
 um checkout seu, e `TX03V2_REPO=<URL https>` clona outro repositório (o seu fork; no CI, a variável de
 repositório `TX03V2_REPO`, `FORK.md`). `KEEP_LAB=1` mantém o lab no fim (`bash <tx03v2>/scripts/local-lab.sh down` depois).
 Dentro de um contêiner que usa o Docker do host, exporte `LOCAL_KIND_INTERNAL=1`. Precisa de Docker com
-8 GB de memória.
+8 GB de memória, ou 7 GB com `LOCAL_SIZE=small`.
 
 Com o lab do tx03v2 já de pé (`make local-up` lá), o deploy sozinho:
 
@@ -34,6 +37,38 @@ GIT_SHA=$(git rev-parse HEAD) scripts/deploy-local.sh
 
 O `scripts/deploy-local.sh` recusa qualquer contexto do kubectl que não seja `kind-tx03v2-local`: um
 cluster seu que esteja no contexto atual nunca recebe o deploy.
+
+## Tamanho `small` e a prova dos 7 GB
+
+`LOCAL_SIZE=small` chega ao `platform/local/install.sh` do tx03v2: os mesmos componentes, com limites
+de memória menores, retenção curta no Prometheus e no Tempo, menos séries e menos workers
+(`docs/LAB_LOCAL.md` do tx03v2 diz o que muda em cada chart). O app não muda. Um valor diferente de
+`default` ou `small` falha antes de qualquer build.
+
+`make e2e-platform-small` (job `e2e-platform-small` do CI, `scripts/e2e-platform-small.sh`) roda o
+`e2e-platform` com `LOCAL_SIZE=small` dentro de um Docker-in-Docker (`docker:29.9.0-dind`, por digest)
+limitado a 7 GB, sem swap: é o Docker de um notebook com 7 GB para ele. O resultado do job é o do
+e2e, e o resumo do job traz o pico de memória do daemon inteiro, o pico de memória anônima (o cache de
+páginas enche qualquer limite; sem swap, a memória anônima é a que não pode ser devolvida), os maiores
+contêineres e os processos que o kernel matou por falta de memória. Não é check exigido: quem barra o
+merge é o `e2e-platform` no tamanho padrão.
+
+| Plataforma `full` + app | Docker | Resultado |
+|---|---|---|
+| tamanho padrão | runner do CI, 16 GB | passa (job `e2e-platform`) |
+| tamanho `small` | 7 GB, sem swap (CI, 2026-10-15) | passa: as 18 sondas em cerca de 13 minutos, memória anônima de 4,40 GiB. Em uma das duas rodadas desta prova, o kernel matou duas vezes a cópia do plugin do Velero na instalação (init container BestEffort, que o kubelet roda de novo) |
+
+O par 01 mediu também o tamanho padrão em 7 GB (falha por thrashing) e o `small` em 6 GB (a sonda de
+rollout perde requisições) e em 8 GB (passa): `docs/LAB_LOCAL.md` do dx01v2. A meta da R1.8 era 6 GB;
+o tamanho `small` ficou em 7 GB por decisão do Bruno em 2026-10-15, abaixo dos 7,65 GiB do Docker
+Desktop de desenvolvimento. Os maiores consumidores (pico do working set no job, 2026-10-15):
+apiserver do Kubernetes 1279 MiB, Grafana 309 MiB, controller do Argo CD 284 MiB,
+Prometheus 250 MiB, Trivy Operator 190 MiB, etcd 160 MiB e os dois pods do Gatekeeper, 264 MiB; a
+API do app usa 62 MiB por pod.
+
+O `e2e-platform-small` é pesado: além dos 7 GB, o daemon interno baixa de novo todas as imagens do
+lab. Ele foi feito para o runner do CI; num notebook de 16 GB com editor e navegador abertos, rode
+`LOCAL_SIZE=small make e2e-platform` com o Docker configurado em 7 GB.
 
 ## Como o deploy funciona (`scripts/deploy-local.sh`)
 

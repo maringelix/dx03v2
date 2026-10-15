@@ -14,7 +14,9 @@
 # Environment: TX03V2_DIR (a tx03v2 checkout; default: clone at the pinned commit), TX03V2_REPO (the
 # https URL to clone; default: the original tx03v2, set it to your fork, FORK.md), E2E_SKIP_BUILD=1,
 # KEEP_LAB=1, LOCAL_KIND_INTERNAL=1 (inside a container that drives the host Docker daemon),
-# E2E_DIAGNOSTICS_DIR (default ${TMPDIR:-/tmp}/dx03v2-harness/platform-diagnostics).
+# LOCAL_SIZE=small (the size of the tx03v2 platform for 7 GB of Docker memory, proved in the CI by
+# scripts/e2e-platform-small.sh; docs/LAB_LOCAL.md), E2E_DIAGNOSTICS_DIR (default
+# ${TMPDIR:-/tmp}/dx03v2-harness/platform-diagnostics).
 set -euo pipefail
 
 # shellcheck source=scripts/lib/common.sh
@@ -642,6 +644,10 @@ EOF
 
 main() {
   require_cmd git docker kubectl node ssh base64
+  # The tx03v2 platform reads LOCAL_SIZE from the environment; a typo fails here, before any build.
+  export LOCAL_SIZE="${LOCAL_SIZE:-default}"
+  [[ "$LOCAL_SIZE" == default || "$LOCAL_SIZE" == small ]] || die "LOCAL_SIZE must be default or small (got '$LOCAL_SIZE')"
+  log "platform size: $LOCAL_SIZE"
   WORK_DIR="$(mktemp -d)"
   trap cleanup EXIT
   GIT_SHA="$(git -C "$REPO_ROOT" rev-parse --verify -q HEAD || printf '%040d' 0)"
