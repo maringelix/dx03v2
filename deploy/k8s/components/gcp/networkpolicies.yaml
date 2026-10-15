@@ -1,7 +1,7 @@
 # Google Cloud edges on top of the base policies (enforced by GKE Dataplane V2, always on in
 # Autopilot). The global external Application Load Balancer reaches the pods directly through zonal
 # network endpoint groups, from the Google Front End and health check ranges (Parameter Manager key
-# lb-source-ranges, fixed in contract v1: 35.191.0.0/16 and 130.211.0.0/22), and the API reaches
+# lb-source-ranges, fixed in the contract: 35.191.0.0/16 and 130.211.0.0/22), and the API reaches
 # Cloud SQL only through its Private Service Connect endpoint (key db/endpoint-ip). Both come from
 # deploy-params: the documentation addresses below are placeholders replaced at render time.
 apiVersion: networking.k8s.io/v1

@@ -1,4 +1,4 @@
-# Contract v1: the GKE Gateway controller (managed by Google, nothing to install) programs a global
+# Contract: the GKE Gateway controller (managed by Google, nothing to install) programs a global
 # external Application Load Balancer for this Gateway, on the global IPv4 address that tx03v2
 # reserves (Parameter Manager key gateway/address-name, referenced as a NamedAddress). HTTP on port
 # 80 only: HTTPS needs a certificate and is planned.

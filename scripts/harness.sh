@@ -39,7 +39,7 @@ CRD_SCHEMA_REF="63669a570e231d4f1f8396d229a1de512bcf0a34" # datreeio/CRDs-catalo
 TEST_POSTGRES_IMAGE="postgres:17-alpine@sha256:b0f9560a2de083e2cc7382e75f808c7381a32852a7ec49117deedb300e552b24"
 # Scanner ignores must be reviewed at least every ~7 months.
 TRIVYIGNORE_MAX_DAYS=214
-# Placeholders of contract v1 (docs/CONTRATO.md): the only project ID that may appear, and the only
+# Placeholders of the contract (docs/CONTRATO.md): the only project ID that may appear, and the only
 # public addresses: the sources of the traffic and health checks of the global external Application
 # Load Balancer (Parameter Manager key lb-source-ranges) and the NodeLocal DNSCache name server.
 PLACEHOLDER_PROJECT="tx03v2-lab-example"
@@ -49,7 +49,7 @@ NODE_DNS_CACHE_IP="169.254.20.10"
 AMBIENT_PROBE_IP="169.254.7.127"
 # google-github-actions/auth writes this credentials file into the workspace of the deploy-gcp job.
 GHA_CREDS_FILE="gha-creds-0123456789abcdef.json"
-# Contract v1 as read by the deploy: the Parameter Manager parameter of tx03v2, its exact key set
+# The contract as read by the deploy: the Parameter Manager parameter of tx03v2, its exact key set
 # (terraform/envs/lab/contract.tf of tx03v2) and the root of the Cloud SQL CA bundle.
 DEPLOY_SCRIPT=scripts/deploy-gcp.sh
 CONTRACT_PARAMETER_NAME=tx03v2-lab-contract
@@ -721,7 +721,7 @@ check_kubeconform() {
   summary "kubeconform -strict (Kubernetes $K8S_SCHEMA_KUBERNETES_VERSION): $(for o in "${K8S_OVERLAYS[@]}"; do printf '%s: %s; ' "$o" "$(grep -oE '[0-9]+ resources found.*' "$dir/$o.summary")"; done)"
 }
 
-# Contract v1 (docs/CONTRATO.md): the rendered manifests use exactly the agreed names, ranges and
+# The contract (docs/CONTRATO.md): the rendered manifests use exactly the agreed names, ranges and
 # ports (scripts/check-manifests.mjs), and the parameter validation refuses anything else.
 check_contract_app() {
   local dir="$HARNESS_WORK_DIR/k8s-contract" rc=0 bad key what refused=0
@@ -761,7 +761,7 @@ check_contract_app() {
     fi
   done
   check_contract_deploy_script || rc=1
-  summary "contract v1: manifests of ${K8S_OVERLAYS[*]}; params validation refused $refused of $((${#bad_values[@]} + 1)) bad inputs; $DEPLOY_SCRIPT reads the ${#CONTRACT_PARAMETER_KEYS[@]} keys with the fixed values, the Cloud SQL root and both overlays"
+  summary "contract: manifests of ${K8S_OVERLAYS[*]}; params validation refused $refused of $((${#bad_values[@]} + 1)) bad inputs; $DEPLOY_SCRIPT reads the ${#CONTRACT_PARAMETER_KEYS[@]} keys with the fixed values, the Cloud SQL root and both overlays"
   return "$rc"
 }
 
@@ -770,12 +770,12 @@ check_contract_app() {
 check_contract_deploy_script() {
   local deploy=$DEPLOY_SCRIPT rc=0 keys line fixed out
   grep -qxF "CONTRACT_PARAMETER=$CONTRACT_PARAMETER_NAME" "$deploy" || {
-    echo "$deploy must read the Parameter Manager parameter $CONTRACT_PARAMETER_NAME (contract v1)"
+    echo "$deploy must read the Parameter Manager parameter $CONTRACT_PARAMETER_NAME (docs/CONTRATO.md)"
     rc=1
   }
   keys="$(awk '/^CONTRACT_KEYS=\(/ { s = 1; next } s && /^\)/ { exit } s { for (i = 1; i <= NF; i++) print $i }' "$deploy" | sort)"
   [[ "$keys" == "$(printf '%s\n' "${CONTRACT_PARAMETER_KEYS[@]}" | sort)" ]] || {
-    printf '%s must read exactly the %d contract v1 keys; got:\n%s\n' "$deploy" "${#CONTRACT_PARAMETER_KEYS[@]}" "$keys"
+    printf '%s must read exactly the %d contract keys; got:\n%s\n' "$deploy" "${#CONTRACT_PARAMETER_KEYS[@]}" "$keys"
     rc=1
   }
   # Fixed values: the line in the script, and the manifests that use the same name.
@@ -785,13 +785,13 @@ check_contract_deploy_script() {
     "CONTRACT_LB_SOURCE_RANGES=$LB_SOURCE_RANGES" "CONTRACT_WAF_POLICY=tx03v2-lab-waf" \
     "CONTRACT_DEPLOY_ACCOUNT=dx03v2-gha-deploy" "GATEWAY_CLASS=gke-l7-global-external-managed"; do
     grep -qxF "$fixed" "$deploy" || {
-      echo "$deploy must check $fixed (contract v1)"
+      echo "$deploy must check $fixed (docs/CONTRATO.md)"
       rc=1
     }
   done
   for line in "        key: tx03v2-lab-db-app" "        key: tx03v2-lab-app-admin-token" "    name: gcp-secret-manager"; do
     grep -qxF "$line" deploy/k8s/components/gcp/externalsecrets.yaml || {
-      echo "deploy/k8s/components/gcp/externalsecrets.yaml must use '${line#"${line%%[! ]*}"}' like $deploy (contract v1)"
+      echo "deploy/k8s/components/gcp/externalsecrets.yaml must use '${line#"${line%%[! ]*}"}' like $deploy (docs/CONTRATO.md)"
       rc=1
     }
   done
@@ -802,11 +802,11 @@ check_contract_deploy_script() {
     }
   done
   grep -qxF "CLOUDSQL_ROOT_SHA256=$CONTRACT_CLOUDSQL_ROOT_SHA256" "$deploy" || {
-    echo "$deploy must trust only the Cloud SQL root with SHA-256 $CONTRACT_CLOUDSQL_ROOT_SHA256 (contract v1)"
+    echo "$deploy must trust only the Cloud SQL root with SHA-256 $CONTRACT_CLOUDSQL_ROOT_SHA256 (docs/CONTRATO.md)"
     rc=1
   }
   grep -qxF 'CLOUDSQL_CA_URL_BASE=https://storage.googleapis.com/cloudsql-ca-bundles' "$deploy" || {
-    echo "$deploy must download the regional bundle from https://storage.googleapis.com/cloudsql-ca-bundles (contract v1)"
+    echo "$deploy must download the regional bundle from https://storage.googleapis.com/cloudsql-ca-bundles (docs/CONTRATO.md)"
     rc=1
   }
   (($(grep -cE '^[A-Z0-9_]+=[0-9A-Fa-f]{64}$' "$deploy") == 1)) || {

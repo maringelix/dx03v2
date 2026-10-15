@@ -1,6 +1,6 @@
 # Non-secret API settings (api/src/config.ts). Each overlay adds APP_ENV and the DB TLS settings.
 # Secrets come from db-credentials (DB_HOST, DB_PORT, DB_NAME, DB_USER, DB_PASSWORD) and
-# app-secrets (ADMIN_TOKEN): contract v1, docs/CONTRATO.md.
+# app-secrets (ADMIN_TOKEN): docs/CONTRATO.md.
 apiVersion: v1
 kind: ConfigMap
 metadata:

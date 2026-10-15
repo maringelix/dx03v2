@@ -1,4 +1,4 @@
-# Contract v1: the Cloud Armor security policy of tx03v2 (Standard tier: preconfigured WAF rules
+# Contract: the Cloud Armor security policy of tx03v2 (Standard tier: preconfigured WAF rules
 # sqli-v33-stable and xss-v33-stable in deny(403), the first 64 KB of each body inspected), attached
 # to the backend services that the Gateway creates for both Services of the HTTPRoute. Its name
 # comes from the Parameter Manager key waf/security-policy; with the literal `none` (tx03v2

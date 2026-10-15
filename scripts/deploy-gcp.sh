@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Deploys dx03v2 to the GKE Autopilot lab cluster of tx03v2 (contract v1, docs/CONTRATO.md).
+# Deploys dx03v2 to the GKE Autopilot lab cluster of tx03v2 (docs/CONTRATO.md).
 # CLOUD-MUTATING and billable: pushes images to Artifact Registry and makes the GKE Gateway
 # controller program a global external Application Load Balancer (forwarding rule, backend
 # services, NEGs and, with the WAF, the Cloud Armor policy of tx03v2), which with Cloud SQL is the
@@ -33,7 +33,7 @@ export PATH="$REPO_ROOT/.tools/bin:$PATH"
 
 NAMESPACE=dx03v2
 CONTRACT_PARAMETER=tx03v2-lab-contract
-# Contract v1: the exact key set of the parameter (the harness check contract-app verifies this list).
+# Contract: the exact key set of the parameter (the harness check contract-app verifies this list).
 CONTRACT_KEYS=(
   project-id region cluster-name network-name nodes-subnet-cidr db/endpoint-ip lb-source-ranges
   artifact-registry/repository db/secret-name app/admin-token-secret-name eso/cluster-secret-store
@@ -50,12 +50,12 @@ CONTRACT_LB_SOURCE_RANGES=35.191.0.0/16,130.211.0.0/22
 CONTRACT_WAF_POLICY=tx03v2-lab-waf
 CONTRACT_DEPLOY_ACCOUNT=dx03v2-gha-deploy
 GATEWAY_CLASS=gke-l7-global-external-managed
-# Contract v1: the regional bundles of the shared Cloud SQL CAs (GOOGLE_MANAGED_CAS_CA) are public.
+# Contract: the regional bundles of the shared Cloud SQL CAs (GOOGLE_MANAGED_CAS_CA) are public.
 # The bundle must hold exactly one self-signed root, with this SHA-256, and only CAs issued by it.
 # The file itself is never pinned: the subordinate CAs of a region rotate.
 CLOUDSQL_CA_URL_BASE=https://storage.googleapis.com/cloudsql-ca-bundles
 CLOUDSQL_ROOT_SHA256=C7B0FCD282B346F1FCC45EE8A79ECF6EF6FAEF2D669BEEC664293B93D83E59BE
-# Contract v1: Autopilot runs x86-64 nodes (general-purpose class): the images target linux/amd64.
+# Contract: Autopilot runs x86-64 nodes (general-purpose class): the images target linux/amd64.
 IMAGE_PLATFORM=linux/amd64
 IPV4="$K8S_IPV4_OCTET(\.$K8S_IPV4_OCTET){3}"
 # The kinds the overlays write, as Kubernetes resources (Role dx03v2-deployer of tx03v2). The
@@ -106,13 +106,13 @@ param() { printf '%s' "${PARAM[$1]}"; }
 # expect_param KEY VALUE -> the fixed names of the contract (never identifiers, safe to print).
 expect_param() {
   [[ "$(param "$1")" == "$2" ]] ||
-    die "contract key $1 is '$(param "$1")' but the manifests expect '$2' (contract v1)"
+    die "contract key $1 is '$(param "$1")' but the manifests expect '$2' (docs/CONTRATO.md)"
 }
 
 # expect_format KEY REGEX -> values that carry identifiers are validated without printing them.
 expect_format() {
   [[ "$(param "$1")" =~ $2 ]] ||
-    die "contract key $1 of $CONTRACT_PARAMETER does not have the format of contract v1 (docs/CONTRATO.md)"
+    die "contract key $1 of $CONTRACT_PARAMETER does not have the format of the contract (docs/CONTRATO.md)"
 }
 
 ipv4_to_int() {
@@ -218,7 +218,7 @@ read_contract() {
       const extra = got.filter((k) => !want.includes(k));
       const missing = want.filter((k) => !got.includes(k));
       if (extra.length || missing.length) {
-        console.error(`the contract keys differ from contract v1: missing [${missing}], unknown [${extra}]`);
+        console.error(`the contract keys differ from docs/CONTRATO.md: missing [${missing}], unknown [${extra}]`);
         process.exit(3);
       }
       for (const [k, v] of Object.entries(doc)) {
@@ -228,14 +228,14 @@ read_contract() {
         }
         console.log(`${k}\t${v}`);
       }
-    });' "${CONTRACT_KEYS[@]}" <<<"$json")" || die "$CONTRACT_PARAMETER does not hold the contract v1 key set (docs/CONTRATO.md)"
+    });' "${CONTRACT_KEYS[@]}" <<<"$json")" || die "$CONTRACT_PARAMETER does not hold the contract key set (docs/CONTRATO.md)"
   while IFS=$'\t' read -r key value; do
     if [[ -n "$key" ]]; then
       PARAM[$key]=$value
     fi
   done <<<"$lines"
   for n in "${CONTRACT_KEYS[@]}"; do
-    [[ -n "${PARAM[$n]:-}" ]] || die "the contract key $n is missing in $CONTRACT_PARAMETER (contract v1, docs/CONTRATO.md)"
+    [[ -n "${PARAM[$n]:-}" ]] || die "the contract key $n is missing in $CONTRACT_PARAMETER (docs/CONTRATO.md)"
   done
   mask "$(param deploy/service-account)"
   [[ "$(param project-id)" == "$GCP_PROJECT_ID" ]] ||
@@ -256,18 +256,18 @@ read_contract() {
   # The nodes subnet is RFC 1918 (validated by tx03v2) and the Private Service Connect endpoint of
   # Cloud SQL is one of its addresses: the egress NetworkPolicy allows exactly that /32.
   [[ "$(param nodes-subnet-cidr)" =~ ${K8S_PARAM_PATTERN[DB_ENDPOINT_IP]%\$}/ ]] ||
-    die "contract key nodes-subnet-cidr is not an RFC 1918 range (contract v1)"
+    die "contract key nodes-subnet-cidr is not an RFC 1918 range (docs/CONTRATO.md)"
   ipv4_in_cidr "$(param db/endpoint-ip)" "$(param nodes-subnet-cidr)" ||
     die "contract key db/endpoint-ip is not inside nodes-subnet-cidr (the Cloud SQL endpoint is an address of the nodes subnet)"
   REGISTRY_HOST="$(param region)-docker.pkg.dev"
   [[ "$(param artifact-registry/repository)" == "$REGISTRY_HOST/$GCP_PROJECT_ID/dx03v2" ]] ||
-    die "contract key artifact-registry/repository is not <region>-docker.pkg.dev/<project>/dx03v2 (contract v1)"
+    die "contract key artifact-registry/repository is not <region>-docker.pkg.dev/<project>/dx03v2 (docs/CONTRATO.md)"
   if [[ "$(param waf/security-policy)" == none ]]; then
     OVERLAY=gcp
   fi
   API_IMAGE="$(param artifact-registry/repository)/api:$GIT_SHA"
   WEB_IMAGE="$(param artifact-registry/repository)/web:$GIT_SHA"
-  log "contract v1: ${#CONTRACT_KEYS[@]} keys read and consistent with the manifests (overlay $OVERLAY)"
+  log "contract: ${#CONTRACT_KEYS[@]} keys read and consistent with the manifests (overlay $OVERLAY)"
 }
 
 # connect_cluster -> temporary kubeconfig, then proof that the platform layer of tx03v2 is there and
@@ -277,10 +277,10 @@ connect_cluster() {
   local -a missing=()
   export KUBECONFIG="$WORK_DIR/kubeconfig"
   # The control plane has no public IP endpoint: the DNS endpoint authorizes every request with IAM
-  # (roles/container.clusterViewer of contract v1); kubectl authenticates through gke-gcloud-auth-plugin.
+  # (roles/container.clusterViewer of the contract); kubectl authenticates through gke-gcloud-auth-plugin.
   gcloud container clusters get-credentials "$(param cluster-name)" --location "$(param region)" \
     --project "$GCP_PROJECT_ID" --dns-endpoint >/dev/null ||
-    die "cannot fetch the credentials of $(param cluster-name) (this identity needs roles/container.clusterViewer, contract v1)"
+    die "cannot fetch the credentials of $(param cluster-name) (this identity needs roles/container.clusterViewer, docs/CONTRATO.md)"
   # Discovery is open to every authenticated user: the API groups of the platform layer must be served.
   versions="$(kubectl api-versions)" || die "cannot reach the API server of $(param cluster-name) with this identity"
   for resource in gateway.networking.k8s.io/v1 networking.gke.io/v1 external-secrets.io/v1; do
@@ -315,7 +315,7 @@ connect_cluster() {
 prepare_images() {
   local packages tags component
   gcloud auth print-access-token | docker login -u oauth2accesstoken --password-stdin "https://$REGISTRY_HOST" >/dev/null ||
-    die "docker login to $REGISTRY_HOST failed (this identity needs roles/artifactregistry.writer on dx03v2, contract v1)"
+    die "docker login to $REGISTRY_HOST failed (this identity needs roles/artifactregistry.writer on dx03v2, docs/CONTRATO.md)"
   REGISTRY_LOGGED_IN=1
   # Names and tags may come back as full resource paths: only the last segment is compared.
   packages="$(gcloud artifacts packages list --repository=dx03v2 --location="$(param region)" \
@@ -380,9 +380,9 @@ create_cloudsql_ca() {
       root_subject="${subject#subject=}"
     fi
   done
-  ((roots == 1)) || die "refusing $url: $roots self-signed certificates, contract v1 expects exactly one root"
+  ((roots == 1)) || die "refusing $url: $roots self-signed certificates, the contract expects exactly one root"
   [[ "$root_fp" == "$CLOUDSQL_ROOT_SHA256" ]] ||
-    die "refusing $url: the root $root_subject has SHA-256 $root_fp, contract v1 expects $CLOUDSQL_ROOT_SHA256"
+    die "refusing $url: the root $root_subject has SHA-256 $root_fp, the contract expects $CLOUDSQL_ROOT_SHA256"
   # Only the root is trusted (no system store): a self-signature or an issuer outside the bundle fails.
   openssl verify -no-CApath -no-CAstore -x509_strict -CAfile "$root" "$root" >/dev/null ||
     die "refusing $url: the root does not verify (signature or validity)"
@@ -466,7 +466,7 @@ main() {
   preflight
   WORK_DIR="$(mktemp -d)"
   trap cleanup EXIT
-  section "contract v1: Parameter Manager $CONTRACT_PARAMETER"
+  section "contract: Parameter Manager $CONTRACT_PARAMETER"
   read_contract
   section "cluster $(param cluster-name): kubeconfig, platform API groups, RBAC"
   connect_cluster

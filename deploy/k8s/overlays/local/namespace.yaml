@@ -1,4 +1,4 @@
-# The Pod Security labels of the namespace tx03v2 creates on GKE (contract v1: enforce restricted,
+# The Pod Security labels of the namespace tx03v2 creates on GKE (contract: enforce restricted,
 # version latest), plus the matching warn labels.
 apiVersion: v1
 kind: Namespace

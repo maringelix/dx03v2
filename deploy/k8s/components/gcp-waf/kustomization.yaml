@@ -1,4 +1,4 @@
-# Optional Cloud Armor policy (contract v1: only when the Parameter Manager key waf/security-policy
+# Optional Cloud Armor policy (contract: only when the Parameter Manager key waf/security-policy
 # is not the literal `none`). Use after components/gcp, which provides the deploy-params ConfigMap
 # (WAF_SECURITY_POLICY).
 apiVersion: kustomize.config.k8s.io/v1alpha1

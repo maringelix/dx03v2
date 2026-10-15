@@ -22,7 +22,7 @@ declare -A K8S_LOCAL_PARAM_PATTERN=(
 )
 
 # Formats accepted for every deploy parameter (values come from the Parameter Manager parameter
-# tx03v2-lab-contract, contract v1). Google Cloud project IDs and regions; resource names follow
+# tx03v2-lab-contract, docs/CONTRATO.md). Google Cloud project IDs and regions; resource names follow
 # RFC 1035 (a lowercase letter, then up to 62 lowercase letters, digits or hyphens, no trailing
 # hyphen).
 K8S_GCP_PROJECT='[a-z][a-z0-9-]{4,28}[a-z0-9]'
@@ -35,7 +35,7 @@ declare -A K8S_PARAM_PATTERN=(
   [WEB_IMAGE]="^$K8S_GCP_REGION-docker\.pkg\.dev/$K8S_GCP_PROJECT/dx03v2/web:[0-9a-f]{40}\$"
   [GATEWAY_ADDRESS_NAME]="^$K8S_GCP_NAME\$"
   [WAF_SECURITY_POLICY]="^(none|$K8S_GCP_NAME)\$"
-  # Fixed in contract v1: the sources of the load balancer traffic and health checks, in this order.
+  # Fixed in the contract: the sources of the load balancer traffic and health checks, in this order.
   [LB_SOURCE_RANGES]='^35\.191\.0\.0/16,130\.211\.0\.0/22$'
   # The Private Service Connect endpoint of Cloud SQL: one address of the nodes subnet, which
   # tx03v2 validates as RFC 1918.
