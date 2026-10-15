@@ -8,6 +8,9 @@ All notable changes to this project are documented here. The format follows
 
 ### Security
 
+- `deploy/local/tx03v2.ref` pins the local platform to the merged tx03v2 R3 commit, so
+  `e2e-platform` and `family-ref` check the integrated infrastructure.
+
 - The smoke test never sends the admin token over plain HTTP to another machine (roadmap R3.17): it
   is sent over HTTPS or to `127.0.0.1`; on any other plain HTTP entry point, such as the Google Cloud lab
   (the load balancer of the Gateway answers HTTP only), the one call that needs it is skipped (`SKIP` in the
