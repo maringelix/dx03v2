@@ -83,7 +83,7 @@ k8s_prepare_tree() {
   local dest=$1 params=${2:-$K8S_PARAMS_EXAMPLE} local_params=${3:-$K8S_LOCAL_PARAMS_EXAMPLE}
   k8s_validate_params "$params" || die "invalid params file: $params"
   k8s_validate_params "$local_params" K8S_LOCAL_PARAM_PATTERN || die "invalid params file: $local_params"
-  rm -rf "$dest"
+  rm -rf "${dest:?}"
   mkdir -p "$dest"
   cp -R "$K8S_DIR/." "$dest/"
   rm -f "$dest/components/gcp/params.env" "$dest/components/local-platform/params.env"
@@ -98,7 +98,7 @@ k8s_render() {
   tmp="$(mktemp -d)"
   k8s_prepare_tree "$tmp/k8s" "$params" "$local_params"
   kubectl kustomize "$tmp/k8s/overlays/$overlay" || rc=$?
-  rm -rf "$tmp"
+  rm -rf "${tmp:?}"
   return "$rc"
 }
 

@@ -8,10 +8,15 @@
 #                 read-only default GITHUB_TOKEN
 #   public repo:  ruleset from .github/rulesets/main.json (with its required status checks), secret
 #                 scanning + push protection, private vulnerability reporting, approval of workflow
-#                 runs from forks of every external contributor, environment `lab` (the gh user that
-#                 runs this script as required reviewer, deployments from main only)
+#                 runs from forks of every external contributor
+#   always:       environment `lab` (the gh user that runs this script as required reviewer,
+#                 deployments from main only). The cloud workflows take their credentials through it,
+#                 so a repository where it cannot be protected is a failure, not a skip
 #   checks:       GitHub Actions enabled (a fork keeps its workflows disabled until you enable them);
-#                 notes when the repository name or .github/CODEOWNERS do not fit the fork
+#                 the OIDC subject of the repository is the immutable one the cloud trust expects
+#                 (owner and repository IDs, which are printed for the bootstrap variables); the
+#                 argument is the repository of this checkout; notes when the repository name or
+#                 .github/CODEOWNERS do not fit the fork
 # Prints what was applied, what was skipped, the notes and what failed. Exit 1 when anything failed.
 set -euo pipefail
 
@@ -64,7 +69,7 @@ JSON
 }
 
 environment_lab() { # REPO REVIEWER_ID
-  local repo=$1 reviewer_id=$2 policies
+  local repo=$1 reviewer_id=$2 policies name id
   gh api --method PUT "repos/$repo/environments/lab" --input - >/dev/null <<JSON
 {
   "wait_timer": 0,
@@ -73,9 +78,63 @@ environment_lab() { # REPO REVIEWER_ID
   "deployment_branch_policy": { "protected_branches": false, "custom_branch_policies": true }
 }
 JSON
-  policies="$(gh api "repos/$repo/environments/lab/deployment-branch-policies" --jq '.branch_policies[].name')"
-  if ! grep -qx main <<<"$policies"; then
+  policies="$(gh api "repos/$repo/environments/lab/deployment-branch-policies" --jq '.branch_policies[] | "\(.id) \(.name)"')"
+  if ! grep -qE '^[0-9]+ main$' <<<"$policies"; then
     gh api --method POST "repos/$repo/environments/lab/deployment-branch-policies" -f name=main -f type=branch >/dev/null
+  fi
+  # main only: any other branch the environment already allowed is removed.
+  while read -r id name; do
+    [[ -n "$id" && "$name" != main ]] || continue
+    gh api --method DELETE "repos/$repo/environments/lab/deployment-branch-policies/$id" >/dev/null
+  done <<<"$policies"
+  # Read it back: the environment must really hold a reviewer and only main.
+  gh api "repos/$repo/environments/lab" --jq '[.protection_rules[]? | select(.type == "required_reviewers")] | length' |
+    grep -qx '[1-9][0-9]*' || {
+    echo "the environment lab has no required reviewer after the update"
+    return 1
+  }
+  policies="$(gh api "repos/$repo/environments/lab/deployment-branch-policies" --jq '[.branch_policies[].name] | join(",")')"
+  [[ "$policies" == main ]] || {
+    echo "the environment lab allows deployments from '$policies', not only main"
+    return 1
+  }
+}
+
+# oidc_subject REPO -> records a failure when the OIDC subject of the repository is still the
+# name-based one (the bootstrap trusts the immutable one: repo:<owner>@<owner id>/<repo>@<repo id>)
+# and notes the numeric IDs the bootstrap variables need.
+oidc_subject() {
+  local repo=$1 prefix owner_id repo_id
+  owner_id="$(gh api "repos/$repo" --jq '.owner.id' 2>/dev/null)" || owner_id=""
+  repo_id="$(gh api "repos/$repo" --jq '.id' 2>/dev/null)" || repo_id=""
+  if [[ -n "$owner_id" && -n "$repo_id" ]]; then
+    NOTES+=("IDs for the bootstrap variables of $repo: owner $owner_id (github_owner_id), repository $repo_id (<repository>_repository_id)")
+  fi
+  if ! prefix="$(gh api "repos/$repo/actions/oidc/customization/sub" --jq '.sub_claim_prefix // empty' 2>/dev/null)"; then
+    NOTES+=("cannot read the OIDC subject template of $repo (needs an administrator): check by hand that its subject has the owner and repository IDs, as docs/RUNBOOK.md explains")
+    return 0
+  fi
+  if [[ -z "$prefix" ]]; then
+    NOTES+=("the API did not return sub_claim_prefix for $repo: check by hand that the OIDC subject carries the owner and repository IDs")
+    return 0
+  fi
+  if [[ "$prefix" =~ ^repo:[A-Za-z0-9_.-]+@[0-9]+/[A-Za-z0-9_.-]+@[0-9]+$ ]]; then
+    log "ok    OIDC subject is the immutable one ($prefix)"
+  else
+    FAILED+=("the OIDC subject of $repo is name-based ($prefix) and the cloud trust expects the immutable one: opt in to immutable subject claims in Settings > Actions > General > OpenID Connect (docs/RUNBOOK.md, section 2), then run this script again")
+  fi
+}
+
+# check_checkout REPO -> the argument must be the repository this checkout was cloned from: the
+# script changes settings of a repository, so a typo or a copy of an old command must not reach
+# another one.
+check_checkout() {
+  local repo=$1 origin
+  origin="$(git -C "$REPO_ROOT" remote get-url origin 2>/dev/null)" || return 0
+  origin="${origin%.git}"
+  origin="${origin##*github.com[:/]}"
+  if [[ "${origin,,}" != "${repo,,}" ]]; then
+    die "this checkout comes from '$origin', not from '$repo': run the script from a clone of the repository you name"
   fi
 }
 
@@ -122,6 +181,7 @@ main() {
   local repo=$1 visibility reviewer reviewer_id checks
   require_cmd gh awk
   [[ -f "$RULESET_FILE" ]] || die "missing $RULESET_FILE"
+  check_checkout "$repo"
   visibility="$(gh api "repos/$repo" --jq '.visibility')" || die "cannot read $repo (is gh authenticated as an admin?)"
   reviewer="$(gh api user --jq '.login')" || die "cannot read the authenticated gh user"
   reviewer_id="$(gh api user --jq '.id')" || die "cannot read the authenticated gh user"
@@ -142,10 +202,13 @@ main() {
     step "secret scanning + push protection" secret_scanning "$repo"
     step "private vulnerability reporting" gh api --method PUT "repos/$repo/private-vulnerability-reporting"
     step "approval of workflow runs from forks of every external contributor" fork_pr_approval "$repo"
-    step "environment lab (reviewer @$reviewer, main only)" environment_lab "$repo" "$reviewer_id"
   else
-    SKIPPED+=("ruleset, secret scanning + push protection, private vulnerability reporting, fork run approval and environment lab: the repository is $visibility (private repositories on the Free plan have no rulesets or environment reviewers); re-run after making it public (docs/PUBLICACAO.md)")
+    SKIPPED+=("ruleset, secret scanning + push protection, private vulnerability reporting and fork run approval: the repository is $visibility (private repositories on the Free plan have none of them); re-run after making it public (docs/PUBLICACAO.md)")
   fi
+  # The environment is what the cloud workflows authenticate through: it is never skipped. A private
+  # repository without environment reviewers (Free plan) fails here, on purpose.
+  step "environment lab (reviewer @$reviewer, main only)" environment_lab "$repo" "$reviewer_id"
+  oidc_subject "$repo"
   fork_notes "$repo"
 
   echo

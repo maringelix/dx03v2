@@ -22,7 +22,8 @@
 # smoke test through the load balancer -> job summary (GitHub Actions).
 # gcloud is the only credential holder: in GitHub Actions google-github-actions/auth writes a
 # Workload Identity Federation credentials file that gcloud refreshes for the whole job, and kubectl
-# gets its tokens from gcloud through gke-gcloud-auth-plugin.
+# gets its tokens from gcloud through gke-gcloud-auth-plugin. The Artifact Registry login of the
+# run goes to a temporary Docker configuration directory (DOCKER_CONFIG), never to ~/.docker.
 set -euo pipefail
 
 # shellcheck source=scripts/lib/common.sh
@@ -170,6 +171,26 @@ cleanup() {
     rm -rf "$WORK_DIR"
   fi
   exit "$rc"
+}
+
+# private_docker_config -> the registry login of this run lives in a Docker configuration directory of
+# its own (under WORK_DIR): ~/.docker/config.json, with your other logins and your current context, is
+# never written, and the token goes away with the directory. The daemon stays the one of the current
+# context, and the CLI plugins (buildx) of the Docker directory of the machine keep working.
+private_docker_config() {
+  local host plugins="${DOCKER_CONFIG:-$HOME/.docker}/cli-plugins"
+  if [[ -z "${DOCKER_HOST:-}" ]]; then
+    host="$(docker context inspect --format '{{.Endpoints.docker.Host}}' 2>/dev/null)" || host=""
+    if [[ -n "$host" ]]; then
+      export DOCKER_HOST="$host"
+    fi
+  fi
+  mkdir -p "$WORK_DIR/docker"
+  chmod 700 "$WORK_DIR/docker"
+  if [[ -d "$plugins" ]]; then
+    ln -s "$plugins" "$WORK_DIR/docker/cli-plugins"
+  fi
+  export DOCKER_CONFIG="$WORK_DIR/docker"
 }
 
 preflight() {
@@ -449,14 +470,15 @@ wait_for_gateway() {
 }
 
 smoke() {
-  local token status=0
+  local status=0
   BASE="http://$GATEWAY_ADDRESS"
-  token="$(kubectl -n "$NAMESPACE" get secret app-secrets -o jsonpath='{.data.ADMIN_TOKEN}' | base64 -d)"
-  [[ ${#token} -ge 32 ]] || die "the Secret app-secrets has no usable ADMIN_TOKEN (is the ExternalSecret synced?)"
-  mask "$token"
+  # The admin token is a credential: the Gateway of the lab answers plain HTTP only (HTTPS in the
+  # clouds is outside the scope of v2), so the token is neither read nor sent, and the smoke test skips
+  # the one call that needs it (SKIP in the summary). The checks that send a made-up token still run.
+  log "the entry point is plain HTTP: the admin token is not read, and the smoke test skips the DELETE that needs it"
   # SMOKE_EDGE=gke: the HTTPRoute sends /api straight to the API; Cloud Armor inspects the first
   # 64 KB and never blocks for size, so the API itself answers 413 for the 70 KB body.
-  BASE_URL="$BASE" ADMIN_TOKEN="$token" SMOKE_EDGE=gke SMOKE_WAIT_SECONDS="${SMOKE_WAIT_SECONDS:-900}" \
+  BASE_URL="$BASE" ADMIN_TOKEN="" SMOKE_EDGE=gke SMOKE_WAIT_SECONDS="${SMOKE_WAIT_SECONDS:-900}" \
     node "$REPO_ROOT/e2e/smoke.mjs" | tee "$WORK_DIR/smoke.txt" || status=$?
   ((status == 0)) || die "the smoke test through the load balancer of the Gateway failed (FAIL lines above)"
 }
@@ -466,6 +488,7 @@ main() {
   preflight
   WORK_DIR="$(mktemp -d)"
   trap cleanup EXIT
+  private_docker_config
   section "contract: Parameter Manager $CONTRACT_PARAMETER"
   read_contract
   section "cluster $(param cluster-name): kubeconfig, platform API groups, RBAC"

@@ -4,6 +4,8 @@ SHELL := bash
 .DEFAULT_GOAL := help
 
 HARNESS := bash scripts/harness.sh
+# The directory of this Makefile: `clean` removes things under it, wherever make was started from.
+ROOT := $(patsubst %/,%,$(dir $(abspath $(firstword $(MAKEFILE_LIST)))))
 
 .PHONY: help tools static test verify build e2e e2e-platform e2e-platform-small all clean
 
@@ -38,6 +40,6 @@ all: ## Every stage: static + test + build + e2e
 	@$(HARNESS) all
 
 clean: ## Remove installed tools, build output, coverage, node_modules and harness scratch data
-	@rm -rf .tools .cache api/dist web/dist api/coverage web/coverage
-	@rm -rf node_modules api/node_modules web/node_modules
+	@cd "$(ROOT)" && rm -rf .tools .cache api/dist web/dist api/coverage web/coverage
+	@cd "$(ROOT)" && rm -rf node_modules api/node_modules web/node_modules
 	@rm -rf "$${TMPDIR:-/tmp}/dx03v2-harness"

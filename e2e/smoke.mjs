@@ -2,6 +2,9 @@
 // (global external Application Load Balancer) on Google Cloud, the Istio Gateway on the tx03v2 local
 // platform.
 //   BASE_URL=http://127.0.0.1:18080 ADMIN_TOKEN=... node e2e/smoke.mjs
+// The admin token is a credential: it is sent over HTTPS or to this machine (127.0.0.1, localhost),
+// never over plain HTTP to another host. Without a token, or on such an entry point, the one call
+// that needs it is skipped and the checks that send a made-up token still run.
 // Optional: SMOKE_WAIT_SECONDS (wait for /healthz and /api/info, plus GET retries; default 0),
 //           SMOKE_MAX_WRITES (attempts to reach the rate limit; default 60),
 //           SMOKE_EDGE (what routes /api to the API: `nginx`, the default, for compose and kind;
@@ -13,12 +16,14 @@ import { randomUUID } from 'node:crypto';
 import { assert, assertEqual, choiceEnv, http, intEnv, requiredEnv, Runner, waitForOk } from './lib.mjs';
 
 const BASE_URL = requiredEnv('BASE_URL');
-const ADMIN_TOKEN = requiredEnv('ADMIN_TOKEN');
+const ADMIN_TOKEN = process.env.ADMIN_TOKEN ?? '';
 const WAIT_SECONDS = intEnv('SMOKE_WAIT_SECONDS', 0);
 const MAX_WRITES = intEnv('SMOKE_MAX_WRITES', 60);
 const EDGE = choiceEnv('SMOKE_EDGE', ['nginx', 'gke', 'istio']);
 const RETRIES = WAIT_SECONDS > 0 ? 5 : 0;
 const HTTPS = new URL(BASE_URL).protocol === 'https:';
+const LOCAL_HOST = ['127.0.0.1', 'localhost', '[::1]'].includes(new URL(BASE_URL).hostname);
+const SEND_ADMIN_TOKEN = ADMIN_TOKEN !== '' && (HTTPS || LOCAL_HOST);
 
 const WEB_CSP =
   "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; " +
@@ -175,16 +180,27 @@ await run.check('GET /api/messages lists the new message first', async () => {
   );
 });
 
-await run.check('DELETE needs the admin token: 401 without/wrong, 204 with it', async () => {
+await run.check('DELETE needs the admin token: 401 without a token and with a wrong one', async () => {
   assert(created !== undefined, 'nothing was created');
   const missing = await remove(created.id);
   assertErrorBody(missing, 401, 'unauthorized', 'without token');
   assertErrorBody(await remove(created.id, `wrong-${marker}-${'x'.repeat(32)}`), 401, 'unauthorized', 'wrong token');
-  const ok = await remove(created.id, ADMIN_TOKEN);
-  assertEqual(ok.status, 204, 'with token');
-  const again = await remove(created.id, ADMIN_TOKEN);
-  assertErrorBody(again, 404, 'not_found', 'second delete');
 });
+
+if (SEND_ADMIN_TOKEN) {
+  await run.check('DELETE with the admin token answers 204, then 404', async () => {
+    assert(created !== undefined, 'nothing was created');
+    const ok = await remove(created.id, ADMIN_TOKEN);
+    assertEqual(ok.status, 204, 'with token');
+    const again = await remove(created.id, ADMIN_TOKEN);
+    assertErrorBody(again, 404, 'not_found', 'second delete');
+  });
+} else {
+  run.skip(
+    'DELETE with the admin token answers 204, then 404',
+    'the admin token is not sent over plain HTTP to another host (use HTTPS)',
+  );
+}
 
 await run.check('oversized bodies and unknown routes get JSON errors', async () => {
   // nginx (64k) or, behind the GKE Gateway, the API itself (10 kb) answers with the same JSON 413:
