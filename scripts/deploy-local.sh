@@ -3,7 +3,7 @@
 # the GitOps way: images to the lab registry, rendered manifests to the GitOps repository of the lab
 # git server, an Argo CD Application that syncs them. LOCAL ONLY: it never talks to Google Cloud.
 # Needs kubectl, git, ssh and docker, and KUBECONFIG pointing at the lab cluster
-# (tx03v2: scripts/local-lab.sh kubeconfig).
+# (tx03v2: scripts/local-lab.sh kubeconfig); any other kube context is refused.
 # Environment:
 #   GIT_SHA          commit to deploy (default: HEAD; the working tree must be clean unless
 #                    DEPLOY_ALLOW_DIRTY=1, which the e2e uses for prebuilt images)
@@ -22,6 +22,8 @@ source "$REPO_ROOT/scripts/lib/k8s.sh"
 export PATH="$REPO_ROOT/.tools/bin:$PATH"
 
 NAMESPACE=dx03v2
+# The kind cluster of the tx03v2 local lab: the only kube context this script deploys to.
+LAB_CONTEXT=kind-tx03v2-local
 CONTRACT_VERSION=2
 SYNC_TIMEOUT="${SYNC_TIMEOUT:-600}"
 WORK_DIR=""
@@ -43,6 +45,15 @@ EXPECTED=(
 
 cleanup() {
   [[ -z "$WORK_DIR" ]] || rm -rf "$WORK_DIR"
+}
+
+# require_lab_context -> refuses any kube context but the kind cluster of the tx03v2 local lab: a
+# cluster of whoever runs the script (KUBECONFIG or ~/.kube/config) is never deployed to.
+require_lab_context() {
+  local got
+  got="$(kubectl config current-context 2>/dev/null)" || got=""
+  [[ "$got" == "$LAB_CONTEXT" ]] ||
+    die "refusing to deploy to the kube context '${got:-none}': only $LAB_CONTEXT (the tx03v2 local lab) is allowed; first: export KUBECONFIG=\"\$(<tx03v2>/scripts/local-lab.sh kubeconfig)\""
 }
 
 read_contract() {
@@ -185,6 +196,7 @@ wait_workloads() {
 
 main() {
   require_cmd kubectl git ssh docker node base64
+  require_lab_context
   kubectl version >/dev/null 2>&1 || die "the lab cluster is not reachable (KUBECONFIG=${KUBECONFIG:-unset})"
   if [[ -z "${GIT_SHA:-}" ]]; then
     GIT_SHA="$(git -C "$REPO_ROOT" rev-parse HEAD)"
