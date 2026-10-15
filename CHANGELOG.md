@@ -19,6 +19,9 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- `deploy/local/tx03v2.ref` follows tx03v2 to `bd8978d` (tx03v2#9: the External Secrets of the local lab without the Autopilot CPU limits, and S.8).
+- Comments, script messages and docs say "the contract" or point to `docs/CONTRATO.md` instead of
+  "contract v1": the contract has been at version 2 since round 1 (roadmap S.8); the README says the deploy script follows contract v2 and HTTPS is outside it.
 - The family table of both READMEs links the family hub `tx00v2` (roadmap, family guardrails,
   cross-repo checks).
 - `scripts/repo-guardrails.sh` also turns issues on (the issue forms) and requires approval for

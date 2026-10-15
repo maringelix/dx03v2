@@ -6,7 +6,7 @@ import { readFileSync } from 'node:fs';
 import { parseAllDocuments } from 'yaml';
 
 const NAMESPACE = 'dx03v2';
-// Kinds the deployer Role of tx03v2 may write (contract v1). Secrets are written by ESO only.
+// Kinds the deployer Role of tx03v2 may write (docs/CONTRATO.md). Secrets are written by ESO only.
 const DEPLOYER_KINDS = new Set([
   'ConfigMap',
   'Deployment',
@@ -34,7 +34,7 @@ const GCP_ONLY_KINDS = [
 // those paths may come back.
 const OTHER_CLOUD =
   /(^|[^a-z0-9])(aws|eks|ecr|rds|elbv2|wafv2|tx01v2|azure|aks|agc|acr|tx02v2)([^a-z0-9]|$)|amazonaws|alb\.ingress\.kubernetes\.io|alb\.networking\.azure\.io|azurecr|keyvault|vault\.azure/i;
-// Contract v1: sources of the traffic and health checks of the global external Application Load
+// Contract: sources of the traffic and health checks of the global external Application Load
 // Balancer (Parameter Manager key lb-source-ranges, a fixed value), and the name server of the
 // NodeLocal DNSCache of GKE Autopilot.
 const LB_SOURCE_RANGES = ['35.191.0.0/16', '130.211.0.0/22'];
@@ -411,7 +411,7 @@ function gcpChecks(overlay, { objs }, params, waf) {
   }
 
   // Gateway API on the GKE Gateway controller: a global external Application Load Balancer on the
-  // reserved address of tx03v2 (contract v1).
+  // reserved address of tx03v2 (docs/CONTRATO.md).
   eq(names(objs, 'Gateway'), ['dx03v2'], `${overlay}: exactly one Gateway`);
   const gateway = find(objs, 'Gateway', 'dx03v2');
   eq(
@@ -447,7 +447,7 @@ function gcpChecks(overlay, { objs }, params, waf) {
     ],
     `${overlay}: HTTPRoute rules (/api -> api:3000, / -> web:8080)`,
   );
-  // One HealthCheckPolicy per Service of the HTTPRoute (contract v1: web /healthz on 8080, api
+  // One HealthCheckPolicy per Service of the HTTPRoute (contract: web /healthz on 8080, api
   // /readyz on 3000, the container ports the network endpoint groups point at).
   eq(names(objs, 'HealthCheckPolicy'), ['api', 'web'], `${overlay}: HealthCheckPolicies`);
   for (const [name, port, path] of [
@@ -524,7 +524,11 @@ function gcpChecks(overlay, { objs }, params, waf) {
     [...BASE_NETWORK_POLICIES, ...GCP_NETWORK_POLICIES].sort(),
     `${overlay}: NetworkPolicies`,
   );
-  eq((params.LB_SOURCE_RANGES ?? '').split(','), LB_SOURCE_RANGES, `${overlay}: params LB_SOURCE_RANGES (contract v1)`);
+  eq(
+    (params.LB_SOURCE_RANGES ?? '').split(','),
+    LB_SOURCE_RANGES,
+    `${overlay}: params LB_SOURCE_RANGES (docs/CONTRATO.md)`,
+  );
   check(
     /^(?:[0-9]{1,3}\.){3}[0-9]{1,3}$/.test(params.DB_ENDPOINT_IP ?? ''),
     `${overlay}: params DB_ENDPOINT_IP is one IPv4 address`,

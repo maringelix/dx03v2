@@ -1,4 +1,4 @@
-# Deploys dx03v2 to the GKE Autopilot lab cluster of tx03v2 (contract v1, docs/CONTRATO.md).
+# Deploys dx03v2 to the GKE Autopilot lab cluster of tx03v2 (docs/CONTRATO.md).
 # CLOUD-MUTATING and billable (Artifact Registry images, the global external Application Load
 # Balancer programmed by the GKE Gateway controller, Cloud Armor): dispatch manually after the
 # tx03v2 apply and platform workflows; tear down with the tx03v2 destroy. The `lab` environment

@@ -23,7 +23,7 @@ The rules, where each one is enforced and the known limits are in
   type-aware rules, hadolint, actionlint, shellcheck, kubeconform (with the Gateway API schemas of
   the version GKE serves and the `networking.gke.io` schemas, both pinned by SHA-256), trivy (config
   and images, HIGH/CRITICAL with a fix available) and policy checks that block real identifiers,
-  public addresses other than the load balancer ranges of contract v1, unpinned actions and images,
+  public addresses other than the load balancer ranges of the contract, unpinned actions and images,
   service account keys and the regressions found in v1.
 - API: input validated with zod (control characters rejected, text stored as received and rendered
   as text by the UI), JSON errors without internals, `trust proxy` as a hop count so spoofed

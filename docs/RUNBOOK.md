@@ -193,7 +193,7 @@ cobrado enquanto não estiver preso a uma forwarding rule).
 | `the working tree has uncommitted changes` / `GIT_SHA must be the checked-out commit` | build a partir de um estado que não é o commit | faça commit ou `git stash`; rode no commit que quer publicar |
 | `gcloud has no active credential` | sem `gcloud auth login` (laptop) ou sem o passo de autenticação | `gcloud auth login`; no workflow, confira as variáveis |
 | `cannot render tx03v2-lab-contract` | tx03v2 não aplicado, projeto errado ou sem `roles/parametermanager.parameterAccessor` | aplique o tx03v2 ou corrija `GCP_PROJECT_ID`; papéis da seção 6 |
-| `the contract keys differ from contract v1` / `contract key ... expect ...` | o tx03v2 publica outra versão do contrato | compare os dois `docs/CONTRATO.md`; mudança de contrato exige PRs coordenados |
+| `the contract keys differ from docs/CONTRATO.md` / `contract key ... expect ...` | o tx03v2 publica outra versão do contrato | compare os dois `docs/CONTRATO.md`; mudança de contrato exige PRs coordenados |
 | `contract key project-id is not GCP_PROJECT_ID` | o parâmetro é de outro projeto | corrija `GCP_PROJECT_ID` |
 | `cannot fetch the credentials of tx03v2-lab` | sem `roles/container.clusterViewer` ou cluster ausente | papéis da seção 6; confira o apply do tx03v2 |
 | `the cluster does not serve ...` | camada de plataforma do tx03v2 não instalada (ESO) ou Gateway API desligada | rode o workflow `platform` do tx03v2 |

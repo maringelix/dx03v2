@@ -115,7 +115,7 @@ create_cluster() {
   log "cluster $CLUSTER: $(kubectl get nodes --no-headers | awk '{ printf "%s %s %s; ", $1, $2, $5 }')"
 }
 
-# The Secrets of contract v1 with random values. stringData goes through stdin, so the values never
+# The Secrets of the contract with random values. stringData goes through stdin, so the values never
 # appear in process arguments, logs or the repository.
 create_secrets() {
   local db_password
