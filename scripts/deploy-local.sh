@@ -191,7 +191,7 @@ wait_for_image() {
     [[ "$actual" == "$expected" ]] && return 0
     sleep 5
   done
-  die "rollout: deployment/$deploy still uses ${actual:-no image}; expected $expected"
+  die "rollout: deployment/$deploy still uses ${actual:-no image}; expected $expected after $attempt checks"
 }
 
 wait_workloads() {
