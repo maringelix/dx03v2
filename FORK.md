@@ -41,8 +41,9 @@ lab, deploys the app through the git server of the lab and Argo CD, runs 18 prob
 over HTTPS through an Istio Gateway, mTLS, metrics, alert rules, the dashboard, logs, one trace from the
 edge to the database, Trivy reports, the HPA, a zero-downtime rollout, a database backup and restore,
 self-heal and two chaos experiments) and always destroys the lab
-([docs/LAB_LOCAL.md](docs/LAB_LOCAL.md)). It needs about 8 GB of memory for Docker and takes 25-45
-minutes on a laptop (about 20 in CI). With less memory, `make e2e` alone still proves the manifests
+([docs/LAB_LOCAL.md](docs/LAB_LOCAL.md)). It needs about 8 GB of memory for Docker, or 7 GB with
+`LOCAL_SIZE=small make e2e-platform` (the same platform with smaller limits and short retention), and
+takes 25-45 minutes on a laptop (about 20 in CI). With less memory, `make e2e` alone still proves the manifests
 on kind.
 
 ## 5. Test the app against your own tx03v2
@@ -91,7 +92,7 @@ take the changes of the original, and run `scripts/repo-guardrails.sh` again whe
 | A pull request waits forever for a required check | Actions are still disabled in the fork: step 2 |
 | `repo-guardrails.sh` fails with "the workflows of this fork are not enabled yet" | step 2, then run it again |
 | `make test` cannot reach PostgreSQL | the harness starts a throwaway `postgres:17-alpine` with Docker; inside a container that uses the Docker of the host, set `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER` and `DB_PASSWORD` instead (`DB_NAME` must end in `_test`: the tests drop and recreate tables) |
-| `make e2e-platform` gets killed or Docker freezes | give Docker about 8 GB of memory (Docker Desktop on WSL 2: `memory=8GB` under `[wsl2]` in `%UserProfile%\.wslconfig`, then `wsl --shutdown`) and run one lab at a time; with less memory, `make e2e` alone still proves the manifests on kind |
+| `make e2e-platform` gets killed or Docker freezes | give Docker about 8 GB of memory (Docker Desktop on WSL 2: `memory=8GB` under `[wsl2]` in `%UserProfile%\.wslconfig`, then `wsl --shutdown`) and run one lab at a time; with 7 GB, `LOCAL_SIZE=small make e2e-platform`; with less memory, `make e2e` alone still proves the manifests on kind |
 | `TX03V2_REPO must be an https git URL` | set the variable to the https clone URL of your tx03v2 fork |
 | `commit ... of deploy/local/tx03v2.ref is not in ...` | sync your tx03v2 fork, or pin a commit of it |
 

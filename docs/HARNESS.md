@@ -59,11 +59,14 @@ nuvem.
 | `images` | build com buildx + cache do GitHub Actions, depois `make tools && make build` com `IMAGES_PREBUILT=1`; as duas imagens viram um artefato | `build` |
 | `e2e` | carrega o artefato, `bash scripts/install-tools.sh kind kubectl`, `make e2e` com `E2E_SKIP_BUILD=1`; diagnósticos como artefato em caso de falha | `e2e` |
 | `e2e-platform` | carrega o artefato, `make e2e-platform` com `E2E_SKIP_BUILD=1`: clona o tx03v2 no commit de `deploy/local/tx03v2.ref`, sobe o lab local completo, faz o deploy GitOps e roda as sondas (`docs/LAB_LOCAL.md`); log completo e diagnósticos como artefato em caso de falha | `platform` |
+| `e2e-platform-small` | carrega o artefato, `make e2e-platform-small` com `E2E_SKIP_BUILD=1`: o mesmo e2e com `LOCAL_SIZE=small` dentro de um Docker-in-Docker limitado a 7 GB, sem swap; picos de memória e OOM kills no resumo do job; diagnósticos como artefato. Não é check exigido | `platform-small` |
 
 Os ids `static`, `test`, `images`, `e2e` e `e2e-platform` são estáveis: são os checks exigidos pelo
 ruleset (`.github/rulesets/main.json`; o `e2e-platform` entrou em 2026-10-13); o check `policy-workflows`
 impede que mudem sem querer. Checks novos: `promtool-rules` (estático: `promtool check rules` e `promtool test rules`
-das regras de alerta do overlay `local-platform`) e `platform-e2e` (estágio `platform`).
+das regras de alerta do overlay `local-platform`), `platform-e2e` (estágio `platform`) e
+`platform-small-e2e` (estágio `platform-small`, que nunca entra no `all`: é pesado e foi feito para o
+runner do CI).
 
 ## Modo estrito
 
