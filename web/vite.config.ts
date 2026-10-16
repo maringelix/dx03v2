@@ -1,7 +1,6 @@
 /// <reference types="vitest/config" />
 // Vite build of the single page + its tests (jsdom). `npm run dev` proxies /api to a local API on
-// port 3000 so the browser keeps talking to a single origin, like nginx and Application Gateway
-// for Containers do.
+// port 3000 so the browser keeps talking to a single origin, like nginx and the ALB do.
 import react from '@vitejs/plugin-react';
 import { defineConfig } from 'vite';
 
@@ -28,7 +27,7 @@ export default defineConfig({
       include: ['src/**/*.{ts,tsx}'],
       // main.tsx only mounts <App /> into #root; everything it renders is covered through App.
       exclude: ['src/test/**', 'src/main.tsx'],
-      reporter: ['text-summary', 'text', 'json-summary'],
+      reporter: ['text-summary', 'text', 'json-summary', 'lcov'],
       reportsDirectory: 'coverage',
       thresholds: { lines: 70 },
     },

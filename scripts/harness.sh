@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # dx03v2 harness: every check lives here. `make` targets and every CI job only call this script.
-# Usage: scripts/harness.sh <stage>...   stages: static, test, build, e2e, platform, platform-small, all, list
+# Usage: scripts/harness.sh <stage>...   stages: static, test, build, dast, e2e, platform, platform-small, all, list
 #   HARNESS_STRICT=1   (set in CI) turns every SKIP into a FAIL
 #   HARNESS_VERBOSE=1  also prints the output of passing checks
 #   HARNESS_ONLY=<re>  runs only the checks whose name matches (local debugging; never in CI)
@@ -70,14 +70,21 @@ REQUIRED_FILES=(
   .devcontainer/devcontainer.json
   .github/CODEOWNERS .github/dependabot.yml .github/pull_request_template.md
   .github/ISSUE_TEMPLATE/config.yml .github/ISSUE_TEMPLATE/bug_report.yml .github/ISSUE_TEMPLATE/cloud_run_report.yml
-  .github/workflows/ci.yml .github/workflows/deploy-gcp.yml .github/rulesets/main.json
-  docs/SUSTENTACAO.md docs/GUARDRAILS.md docs/HARNESS.md docs/CONTRATO.md docs/RUNBOOK.md
+  .github/workflows/ci.yml .github/workflows/deploy-gcp.yml .github/workflows/publish-images.yml .github/rulesets/main.json
+  docs/SUSTENTACAO.md docs/GUARDRAILS.md docs/HARNESS.md docs/CONTRATO.md docs/RUNBOOK.md docs/SEGURANCA_CI.md docs/MIGRATIONS.md
   docs/ARQUITETURA.md docs/API.md docs/PUBLICACAO.md
   tools/versions.env tools/checksums.txt
   scripts/install-tools.sh scripts/update-tool-checksums.sh scripts/harness.sh scripts/repo-guardrails.sh
+  scripts/check-codeql-sarif.mjs scripts/dast-zap.sh scripts/get-publish-run-metadata.sh scripts/install-crane.sh
+  scripts/install-sonar-scanner.sh scripts/publish-ghcr-images.sh scripts/sonar-bootstrap.sh scripts/sonar-service.sh
+  scripts/test-gitleaks-gate.sh scripts/test-sonar-gate.sh scripts/test-zap-gate.sh
+  scripts/verify-ci-image-artifact.sh scripts/verify-release-bundle.sh sonar-project.properties
   scripts/dev-env.sh scripts/compose-smoke.sh scripts/e2e-kind.sh scripts/deploy-gcp.sh scripts/render-k8s.sh
   scripts/update-crd-schemas.sh scripts/crd-to-jsonschema.mjs scripts/check-manifests.mjs
   scripts/check-build-context.mjs scripts/publish-gitops.sh scripts/render-gitops-application.mjs scripts/check-gitops-renderer.mjs
+  api/migrations/0002_expand_message_display_name.sql api/test/integration/migrations.test.ts
+  security/dast-baseline.conf security/fixtures/dast/zap.conf security/fixtures/dast/server.mjs
+  security/fixtures/sonar/uncovered.ts security/fixtures/sonar/fixture.lcov
   deploy/k8s/components/gcp/params.example.env deploy/k8s/schemas/source.env
   deploy/k8s/overlays/gcp/gitops-revision.yaml deploy/k8s/overlays/gcp-waf/gitops-revision.yaml
 )
@@ -479,29 +486,67 @@ check_policy_workflows() {
     echo "Google Cloud access is Workload Identity Federation only (google-github-actions/auth with workload_identity_provider): no service account keys"
     rc=1
   fi
-  if grep -nE '\$\{\{[[:space:]]*(github\.event\.)?inputs\.' "${files[@]}"; then
-    echo "never interpolate workflow inputs into the workflow (pass data through env, validated by the script)"
-    rc=1
-  fi
-  # The cloud workflow: the only one that may request an OIDC token.
-  local wf=.github/workflows/deploy-gcp.yml v
   for f in "${files[@]}"; do
-    [[ "$f" != "$wf" ]] || continue
+    out="$(awk -v file="$f" '
+      function indentation(line, prefix) {
+        prefix = line
+        sub(/[^ ].*$/, "", prefix)
+        return length(prefix)
+      }
+      /^[[:space:]-]*run:/ {
+        run_indent = indentation($0)
+        in_run = 1
+        if ($0 ~ /\$\{\{[[:space:]]*(github\.event\.)?inputs\./) {
+          printf "%s:%d: workflow inputs must not be interpolated into shell commands\n", file, NR
+          bad = 1
+        }
+        next
+      }
+      in_run {
+        if ($0 !~ /^[[:space:]]*$/ && indentation($0) <= run_indent) in_run = 0
+        if (in_run && $0 ~ /\$\{\{[[:space:]]*(github\.event\.)?inputs\./) {
+          printf "%s:%d: workflow inputs must not be interpolated into shell commands\n", file, NR
+          bad = 1
+        }
+      }
+      END { exit bad }
+    ' "$f")" || {
+      printf '%s\n' "$out"
+      rc=1
+    }
+  done
+  # Only the GCP deploy and signed image publisher may request OIDC tokens.
+  local wf=.github/workflows/deploy-gcp.yml pubwf=.github/workflows/publish-images.yml v
+  for f in "${files[@]}"; do
+    [[ "$f" != "$wf" && "$f" != "$pubwf" ]] || continue
     if grep -n 'id-token: write' "$f"; then
       echo "$f: id-token: write is reserved for $wf (OIDC is for the cloud deploy only)"
       rc=1
     fi
   done
+  [[ -f "$pubwf" ]] || {
+    echo "missing $pubwf (the workflow that signs and publishes CI-tested image digests)"
+    return 1
+  }
+  [[ "$(grep -c 'id-token: write' "$pubwf")" == 1 && "$(grep -cE '^      id-token: write$' "$pubwf")" == 1 ]] || {
+    echo "$pubwf: id-token: write exactly once, in the image-publish job for Sigstore attestations"
+    rc=1
+  }
   [[ -f "$wf" ]] || {
     echo "missing $wf (the Google Cloud deploy workflow, which runs scripts/deploy-gcp.sh)"
     return 1
   }
   if ! grep -qE '^  workflow_dispatch:[[:space:]]*$' "$wf" ||
     grep -qE '^  (push|pull_request|pull_request_target|schedule|workflow_run|workflow_call|repository_dispatch):' "$wf" ||
-    grep -qE '^    inputs:' "$wf"; then
-    echo "$wf must be workflow_dispatch only, without inputs (cloud workflow)"
+    ! grep -qE '^      release_run_id:' "$wf" ||
+    ! grep -qE '^        required: true$' "$wf"; then
+    echo "$wf must be manual-only and require the verified release run id"
     rc=1
   fi
+  grep -qE '^  verify-release:[[:space:]]*$' "$wf" || {
+    echo "$wf must verify the release before the protected lab environment"
+    rc=1
+  }
   grep -qE '^    environment: lab$' "$wf" || {
     echo "$wf: the deploy job must use environment: lab (OIDC subject repo:<owner>/dx03v2:environment:lab)"
     rc=1
@@ -518,12 +563,12 @@ check_policy_workflows() {
     echo "$wf: contents: write must appear once, in the deploy job that publishes the GitOps branch"
     rc=1
   }
-  [[ "$(awk '/^    permissions:/ { p = 1; next } p && /^      [a-z-]+:/ { sub(/^      /, ""); print; next } p { exit }' "$wf" | sort | tr '\n' ' ')" == 'contents: write id-token: write ' ]] || {
-    echo "$wf: the deploy job permissions must be exactly contents: write and id-token: write"
+  [[ "$(awk '/^    permissions:/ { p = 1; next } p && /^      [a-z-]+:/ { sub(/^      /, ""); print; next } p { exit }' "$wf" | sort | tr '\n' ' ')" == 'actions: read attestations: read contents: write id-token: write packages: read ' ]] || {
+    echo "$wf: the deploy job permissions must be limited to actions/attestations/package reads, GitOps writes and OIDC"
     rc=1
   }
-  [[ "$(awk '/^    steps:/ { s = 1; next } s && /^      - name:/ { sub(/^      - name:[[:space:]]*/, ""); print; exit }' "$wf")" == 'Check repository variables' ]] || {
-    echo "$wf: the first step must be 'Check repository variables'"
+  grep -qF 'Re-verify the bundle and signer before requesting Google Cloud credentials' "$wf" || {
+    echo "$wf: re-verify the release bundle before requesting Google Cloud credentials"
     rc=1
   }
   for v in GCP_PROJECT_ID GCP_WORKLOAD_IDENTITY_PROVIDER GCP_DEPLOY_SERVICE_ACCOUNT; do
@@ -554,8 +599,12 @@ check_policy_workflows() {
     echo "$wf: setup-gcloud must install gke-gcloud-auth-plugin (kubectl authentication for GKE)"
     rc=1
   }
-  grep -qE '^      - uses: docker/setup-buildx-action@[0-9a-f]{40} # v[0-9]+\.[0-9]+\.[0-9]+$' "$wf" || {
-    echo "$wf: the images are built with buildx (docker/setup-buildx-action pinned by commit SHA)"
+  grep -qE 'bash scripts/install-crane\.sh[[:space:]]*$' "$wf" || {
+    echo "$wf: crane must be installed from the SHA256-pinned install-crane.sh script"
+    rc=1
+  }
+  grep -qF 'needs: verify-release' "$wf" || {
+    echo "$wf: deploy must depend on verify-release before entering environment lab"
     rc=1
   }
   grep -qE 'bash scripts/install-tools\.sh kubectl[[:space:]]*$' "$wf" || {
@@ -624,9 +673,9 @@ check_policy_app() {
   forbid 'Strict-Transport-Security "max-age' "HSTS only through the map (HTTPS requests)" '*.conf' web/nginx || rc=1
   # A destination that is empty must stop the script, not delete what the path then resolves to.
   forbid 'rm -rf "\$[A-Za-z_]+"' "rm -rf of a bare variable in scripts/lib/k8s.sh: use the :? parameter expansion so an empty value stops the script" 'k8s.sh' scripts/lib || rc=1
-  # The registry login of the deploy goes to a Docker configuration directory of its own: it never writes ~/.docker.
-  grep -qE '^  private_docker_config$' scripts/deploy-gcp.sh || {
-    echo "scripts/deploy-gcp.sh must call private_docker_config (a temporary DOCKER_CONFIG) before the registry login"
+  # Crane credentials for both registries stay in a temporary Docker-compatible config.
+  grep -qE '^  private_registry_config$' scripts/deploy-gcp.sh || {
+    echo "scripts/deploy-gcp.sh must call private_registry_config before authenticating to either registry"
     rc=1
   }
   local loc includes
@@ -784,12 +833,28 @@ check_contract_app() {
       rc=1
     fi
   done
+  sed -E \
+    -e 's#tx03v2-lab-example/dx03v2/api:[0-9a-f]{40}#tx03v2-fork-lab/dx03v2/api@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa#' \
+    -e 's#tx03v2-lab-example/dx03v2/web:[0-9a-f]{40}#tx03v2-fork-lab/dx03v2/web@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb#' \
+    "$example" >"$dir/fork-digest-params.env"
+  if ! k8s_validate_params "$dir/fork-digest-params.env" ||
+    ! node scripts/render-gitops-application.mjs gcp gcp "$dir/fork-digest-params.env" "$example" \
+      >"$dir/gitops-patches/fork-digest.json" ||
+    ! node scripts/check-gitops-renderer.mjs "$dir/gitops-patches/fork-digest.json" "$dir/gcp.yaml" ||
+    ! grep -qF 'tx03v2-fork-lab/dx03v2/api@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' \
+      "$dir/gitops-patches/fork-digest.json" ||
+    ! grep -qF 'tx03v2-fork-lab/dx03v2/web@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb' \
+      "$dir/gitops-patches/fork-digest.json"; then
+    echo "GitOps must preserve exact approved image digests for a fork-specific Artifact Registry project"
+    rc=1
+  fi
   expected_mode="DEPLOY_MODE=\"\${DEPLOY_MODE:-gitops}\""
   if ! grep -qF 'DEPLOY_MODE: gitops' .github/workflows/deploy-gcp.yml ||
     ! grep -qF 'contents: write' .github/workflows/deploy-gcp.yml ||
-    grep -qE '^    inputs:' .github/workflows/deploy-gcp.yml ||
+    ! grep -qE '^      release_run_id:' .github/workflows/deploy-gcp.yml ||
+    ! grep -qF 'needs: verify-release' .github/workflows/deploy-gcp.yml ||
     ! grep -qF "$expected_mode" scripts/deploy-gcp.sh; then
-    echo "deploy-gcp must default to the GitOps branch publishing mode"
+    echo "deploy-gcp must require a verified release and default to the GitOps branch publishing mode"
     rc=1
   fi
   expected_push="git -C \"\$tmp/repo\" push --quiet origin \"HEAD:refs/heads/\$branch\""
@@ -803,7 +868,7 @@ check_contract_app() {
 }
 
 # scripts/deploy-gcp.sh reads exactly the contract keys, checks the fixed values against the same
-# names the manifests use, trusts only the contract root of Cloud SQL and calls gcloud read-only.
+# names the manifests use, verifies a signed release, and calls gcloud read-only.
 check_contract_deploy_script() {
   local deploy=$DEPLOY_SCRIPT rc=0 keys line fixed out
   grep -qxF "CONTRACT_PARAMETER=$CONTRACT_PARAMETER_NAME" "$deploy" || {
@@ -857,7 +922,10 @@ check_contract_deploy_script() {
     rc=1
   fi
   # shellcheck disable=SC2016 # literal lines of the deploy script, not expansions
-  for line in '--dns-endpoint' 'SMOKE_EDGE=gke' 'docker login -u oauth2accesstoken --password-stdin' \
+  for line in '--dns-endpoint' 'SMOKE_EDGE=gke' 'crane auth login ghcr.io --username "$GITHUB_ACTOR" --password-stdin' \
+    'crane copy --no-clobber "$source_ref" "$image_tag"' \
+    'bash "$REPO_ROOT/scripts/verify-release-bundle.sh"' \
+    '[[ "$target_digest" == "$source_digest" ]]' \
     'mask "$(param deploy/service-account)"' 'mask "$GCP_PROJECT_ID"' 'ADMIN_TOKEN=""' \
     '[[ "$(param project-id)" == "$GCP_PROJECT_ID" ]]' 'ipv4_in_cidr "$(param db/endpoint-ip)" "$(param nodes-subnet-cidr)"' \
     '[[ "$GATEWAY_ADDRESS" == "$(param gateway/address)" ]]' 'healthcheckpolicies.networking.gke.io' 'gcpbackendpolicies.networking.gke.io'; do
@@ -875,7 +943,7 @@ check_contract_deploy_script() {
     rc=1
   }
   if grep -nE 'docker (push|build) |--password[= ]|:latest|--internal-ip|credentials_json|--admin' "$deploy"; then
-    echo "$deploy: images only through docker buildx build --push of the commit tag, the registry token only on stdin, the DNS endpoint only"
+    echo "$deploy: only verified digest promotion (no image rebuild), registry tokens only on stdin, and the DNS endpoint only"
     rc=1
   fi
   return "$rc"

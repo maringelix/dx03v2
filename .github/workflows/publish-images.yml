@@ -1,0 +1,260 @@
+# Manually publish only an image artifact from a successful main CI run. This workflow performs no
+# build: it validates the CI run and archive, then publishes and attests the same tested image IDs.
+name: publish-images
+
+on:
+  workflow_dispatch:
+    inputs:
+      ci_run_id:
+        description: Successful main-branch ci workflow run id for the current main commit
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: publish-dx03v2-${{ inputs.ci_run_id }}-${{ github.run_id }}-${{ github.run_attempt }}
+  cancel-in-progress: false
+
+jobs:
+  ref-guard:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - name: Require the protected default branch
+        run: |
+          if [[ "$GITHUB_REF" != refs/heads/main ]]; then
+            echo 'This workflow must be dispatched from main.' >&2
+            exit 1
+          fi
+
+  publish:
+    needs: ref-guard
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    permissions:
+      actions: read
+      attestations: write
+      artifact-metadata: write
+      contents: read
+      id-token: write
+      packages: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      CI_RUN_ID: ${{ inputs.ci_run_id }}
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Download the CI-tested image artifact
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: dx03v2-images
+          run-id: ${{ inputs.ci_run_id }}
+          github-token: ${{ github.token }}
+          path: ${{ runner.temp }}/dx03v2-ci-artifact
+
+      - name: Verify the source run, required checks, archive, and image IDs
+        env:
+          ARTIFACT_DIR: ${{ runner.temp }}/dx03v2-ci-artifact
+        run: bash scripts/verify-ci-image-artifact.sh
+
+      - name: Authenticate to GHCR with the job token
+        run: printf '%s' "$GH_TOKEN" | docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
+
+      - name: Install pinned Trivy
+        run: |
+          bash scripts/install-tools.sh trivy
+          printf '%s/.tools/bin\n' "$GITHUB_WORKSPACE" >> "$GITHUB_PATH"
+
+      - name: Publish both images without rebuilding
+        id: publish
+        env:
+          ARTIFACT_DIR: ${{ runner.temp }}/dx03v2-ci-artifact
+        run: bash scripts/publish-ghcr-images.sh
+
+      - name: Scan the exact registry digests and generate SPDX SBOMs
+        env:
+          API_IMAGE_NAME: ${{ steps.publish.outputs.api_name }}
+          API_IMAGE_DIGEST: ${{ steps.publish.outputs.api_digest }}
+          WEB_IMAGE_NAME: ${{ steps.publish.outputs.web_name }}
+          WEB_IMAGE_DIGEST: ${{ steps.publish.outputs.web_digest }}
+          SBOM_DIR: ${{ runner.temp }}/dx03v2-sbom
+        run: |
+          set -euo pipefail
+          mkdir -p "$SBOM_DIR"
+          for image in "$API_IMAGE_NAME@$API_IMAGE_DIGEST" "$WEB_IMAGE_NAME@$WEB_IMAGE_DIGEST"; do
+            trivy image --quiet --scanners vuln --severity HIGH,CRITICAL --ignore-unfixed --exit-code 1 \
+              --cache-dir "$RUNNER_TEMP/trivy-cache" --ignorefile .trivyignore.yaml "$image"
+          done
+          trivy image --quiet --format spdx-json --output "$SBOM_DIR/api.spdx.json" \
+            "$API_IMAGE_NAME@$API_IMAGE_DIGEST"
+          trivy image --quiet --format spdx-json --output "$SBOM_DIR/web.spdx.json" \
+            "$WEB_IMAGE_NAME@$WEB_IMAGE_DIGEST"
+
+      - name: Attest API image build provenance with Sigstore
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-name: ${{ steps.publish.outputs.api_name }}
+          subject-digest: ${{ steps.publish.outputs.api_digest }}
+          push-to-registry: true
+          create-storage-record: false
+
+      - name: Attest web image build provenance with Sigstore
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-name: ${{ steps.publish.outputs.web_name }}
+          subject-digest: ${{ steps.publish.outputs.web_digest }}
+          push-to-registry: true
+          create-storage-record: false
+
+      - name: Attest API SPDX SBOM with Sigstore
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-name: ${{ steps.publish.outputs.api_name }}
+          subject-digest: ${{ steps.publish.outputs.api_digest }}
+          sbom-path: ${{ runner.temp }}/dx03v2-sbom/api.spdx.json
+          push-to-registry: true
+          create-storage-record: false
+
+      - name: Attest web SPDX SBOM with Sigstore
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-name: ${{ steps.publish.outputs.web_name }}
+          subject-digest: ${{ steps.publish.outputs.web_digest }}
+          sbom-path: ${{ runner.temp }}/dx03v2-sbom/web.spdx.json
+          push-to-registry: true
+          create-storage-record: false
+
+      - name: Verify signatures, workflow identity, issuer, commit, and SBOM predicates
+        env:
+          API_IMAGE_NAME: ${{ steps.publish.outputs.api_name }}
+          API_IMAGE_DIGEST: ${{ steps.publish.outputs.api_digest }}
+          WEB_IMAGE_NAME: ${{ steps.publish.outputs.web_name }}
+          WEB_IMAGE_DIGEST: ${{ steps.publish.outputs.web_digest }}
+        run: |
+          set -euo pipefail
+          expected_workflow="$GITHUB_REPOSITORY/.github/workflows/publish-images.yml"
+          for image in "$API_IMAGE_NAME@$API_IMAGE_DIGEST" "$WEB_IMAGE_NAME@$WEB_IMAGE_DIGEST"; do
+            gh attestation verify "oci://$image" \
+              --repo "$GITHUB_REPOSITORY" \
+              --signer-workflow "$expected_workflow" \
+              --cert-oidc-issuer https://token.actions.githubusercontent.com \
+              --source-ref refs/heads/main \
+              --source-digest "$GITHUB_SHA" \
+              --deny-self-hosted-runners
+            gh attestation verify "oci://$image" \
+              --repo "$GITHUB_REPOSITORY" \
+              --predicate-type https://spdx.dev/Document/v2.3 \
+              --signer-workflow "$expected_workflow" \
+              --cert-oidc-issuer https://token.actions.githubusercontent.com \
+              --source-ref refs/heads/main \
+              --source-digest "$GITHUB_SHA" \
+              --deny-self-hosted-runners
+          done
+
+      - name: Prove unsigned artifacts and unexpected signer identities fail verification
+        env:
+          API_IMAGE_NAME: ${{ steps.publish.outputs.api_name }}
+          API_IMAGE_DIGEST: ${{ steps.publish.outputs.api_digest }}
+        run: |
+          set -euo pipefail
+          signed_image="oci://$API_IMAGE_NAME@$API_IMAGE_DIGEST"
+          if gh attestation verify "$signed_image" \
+            --repo "$GITHUB_REPOSITORY" \
+            --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/ci.yml" \
+            --cert-oidc-issuer https://token.actions.githubusercontent.com \
+            --source-ref refs/heads/main \
+            --source-digest "$GITHUB_SHA" \
+            --deny-self-hosted-runners >/dev/null 2>&1; then
+            echo 'error: an image signed by the wrong workflow unexpectedly passed verification' >&2
+            exit 1
+          fi
+          if gh attestation verify "$signed_image" \
+            --repo "$GITHUB_REPOSITORY" \
+            --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/publish-images.yml" \
+            --cert-oidc-issuer https://example.invalid \
+            --source-ref refs/heads/main \
+            --source-digest "$GITHUB_SHA" \
+            --deny-self-hosted-runners >/dev/null 2>&1; then
+            echo 'error: an image signed by the wrong OIDC issuer unexpectedly passed verification' >&2
+            exit 1
+          fi
+          if gh attestation verify "$signed_image" \
+            --repo "$GITHUB_REPOSITORY" \
+            --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/publish-images.yml" \
+            --cert-oidc-issuer https://token.actions.githubusercontent.com \
+            --source-ref refs/heads/main \
+            --source-digest 0000000000000000000000000000000000000000 \
+            --deny-self-hosted-runners >/dev/null 2>&1; then
+            echo 'error: an image attested for a different source SHA unexpectedly passed verification' >&2
+            exit 1
+          fi
+          unsigned_file="$(mktemp "$RUNNER_TEMP/dx03v2-unsigned.XXXXXX")"
+          printf 'unsigned release fixture\n' >"$unsigned_file"
+          if gh attestation verify "$unsigned_file" \
+            --repo "$GITHUB_REPOSITORY" \
+            --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/publish-images.yml" \
+            --cert-oidc-issuer https://token.actions.githubusercontent.com \
+            --source-ref refs/heads/main \
+            --source-digest "$GITHUB_SHA" >/dev/null 2>&1; then
+            rm -f "$unsigned_file"
+            echo 'error: an unsigned artifact unexpectedly passed verification' >&2
+            exit 1
+          fi
+          rm -f "$unsigned_file"
+          echo 'PASS: unsigned artifact, wrong workflow, wrong issuer, and wrong source SHA are rejected.'
+
+      - name: Write the digest-locked release manifest
+        env:
+          API_IMAGE_NAME: ${{ steps.publish.outputs.api_name }}
+          API_IMAGE_DIGEST: ${{ steps.publish.outputs.api_digest }}
+          API_IMAGE_ID: ${{ steps.publish.outputs.api_image_id }}
+          WEB_IMAGE_NAME: ${{ steps.publish.outputs.web_name }}
+          WEB_IMAGE_DIGEST: ${{ steps.publish.outputs.web_digest }}
+          WEB_IMAGE_ID: ${{ steps.publish.outputs.web_image_id }}
+          RELEASE_TAG: ${{ steps.publish.outputs.release_tag }}
+          CI_RUN_ID: ${{ inputs.ci_run_id }}
+          SBOM_DIR: ${{ runner.temp }}/dx03v2-sbom
+          RELEASE_DIR: ${{ runner.temp }}/dx03v2-release
+        run: |
+          set -euo pipefail
+          mkdir -p "$RELEASE_DIR"
+          cp "$SBOM_DIR/api.spdx.json" "$RELEASE_DIR/api.spdx.json"
+          cp "$SBOM_DIR/web.spdx.json" "$RELEASE_DIR/web.spdx.json"
+          jq -n \
+            --arg repository "$GITHUB_REPOSITORY" \
+            --arg source_sha "$GITHUB_SHA" \
+            --arg ci_run_id "$CI_RUN_ID" \
+            --arg publisher_run_id "$GITHUB_RUN_ID" \
+            --arg publisher_run_attempt "$GITHUB_RUN_ATTEMPT" \
+            --arg release_tag "$RELEASE_TAG" \
+            --arg api_name "$API_IMAGE_NAME" --arg api_digest "$API_IMAGE_DIGEST" --arg api_id "$API_IMAGE_ID" \
+            --arg api_sbom_sha "$(sha256sum "$SBOM_DIR/api.spdx.json" | awk '{print $1}')" \
+            --arg web_name "$WEB_IMAGE_NAME" --arg web_digest "$WEB_IMAGE_DIGEST" --arg web_id "$WEB_IMAGE_ID" \
+            --arg web_sbom_sha "$(sha256sum "$SBOM_DIR/web.spdx.json" | awk '{print $1}')" \
+            '{schema_version: 1, repository: $repository,
+              source: {ref: "refs/heads/main", sha: $source_sha, ci_run_id: $ci_run_id},
+              publisher: {workflow: ".github/workflows/publish-images.yml", run_id: $publisher_run_id,
+                          run_attempt: ($publisher_run_attempt | tonumber), release_tag: $release_tag},
+              images: {
+                api: {name: $api_name, digest: $api_digest, image_id: $api_id, sbom_sha256: $api_sbom_sha},
+                web: {name: $web_name, digest: $web_digest, image_id: $web_id, sbom_sha256: $web_sbom_sha}}}' \
+            >"$RELEASE_DIR/release-manifest.json"
+
+      - name: Upload the verified release manifest
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: dx03v2-release-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/dx03v2-release/
+          retention-days: 90
+          if-no-files-found: error
+
+      - name: Remove the GHCR login
+        if: always()
+        run: docker logout ghcr.io

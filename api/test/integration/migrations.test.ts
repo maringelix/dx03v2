@@ -8,6 +8,7 @@ import { listMigrationFiles, main, MIGRATIONS_DIR, runMigrations, waitForDatabas
 import { silentLogger, testConfig } from './helpers.ts';
 
 const FIRST = '0001_create_messages.sql';
+const EXPANSION = '0002_expand_message_display_name.sql';
 let pool: DbPool;
 const scratch: string[] = [];
 
@@ -64,7 +65,48 @@ describe('runMigrations', () => {
     const columns = await pool.query<{ column_name: string }>(
       "SELECT column_name FROM information_schema.columns WHERE table_name = 'messages' ORDER BY ordinal_position",
     );
-    expect(columns.rows.map((row) => row.column_name)).toEqual(['id', 'author', 'body', 'created_at']);
+    expect(columns.rows.map((row) => row.column_name)).toEqual(['id', 'author', 'body', 'created_at', 'display_name']);
+  });
+
+  it('keeps previous-release writes compatible with the additive expansion', async () => {
+    await runMigrations(pool, silentLogger);
+    // This is the SQL shape used by the previous release: it does not know about display_name.
+    await pool.query('INSERT INTO messages (author, body) VALUES ($1, $2)', ['old-release', 'still works']);
+    const oldProjection = await pool.query<{ author: string; body: string }>(
+      'SELECT author, body FROM messages WHERE author = $1',
+      ['old-release'],
+    );
+    expect(oldProjection.rows).toEqual([{ author: 'old-release', body: 'still works' }]);
+    const expansion = await pool.query<{ display_name: string | null }>(
+      'SELECT display_name FROM messages WHERE author = $1',
+      ['old-release'],
+    );
+    expect(expansion.rows).toEqual([{ display_name: null }]);
+  });
+
+  it('contracts only after backfill and an old-release writer is retired', async () => {
+    await runMigrations(pool, silentLogger);
+    await pool.query('INSERT INTO messages (author, body) VALUES ($1, $2)', ['old-release', 'before backfill']);
+    await pool.query('UPDATE messages SET display_name = author WHERE display_name IS NULL');
+    const contract = migrationsDir({
+      [FIRST]: COPY,
+      [EXPANSION]: COPY,
+      '0003_contract_display_name.sql': 'ALTER TABLE messages ALTER COLUMN display_name SET NOT NULL;',
+    });
+    await expect(runMigrations(pool, silentLogger, contract)).resolves.toEqual({
+      applied: ['0003_contract_display_name.sql'],
+      skipped: [FIRST, EXPANSION],
+    });
+    await expect(
+      pool.query('INSERT INTO messages (author, body, display_name) VALUES ($1, $2, $3)', [
+        'new-release',
+        'after contract',
+        'new-release',
+      ]),
+    ).resolves.toMatchObject({ rowCount: 1 });
+    await expect(
+      pool.query('INSERT INTO messages (author, body) VALUES ($1, $2)', ['old-release', 'too late']),
+    ).rejects.toThrow();
   });
 
   it('serializes concurrent runners with the advisory lock', async () => {

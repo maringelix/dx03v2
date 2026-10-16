@@ -9,9 +9,9 @@ publicado junto.
 
 - [ ] `HARNESS_STRICT=1 make verify build` e `make e2e` verdes no devcontainer ou em Linux.
 - [ ] Bit executável nos scripts de entrada antes do primeiro commit (o Windows não o grava):
-      `git add --chmod=+x scripts/compose-smoke.sh scripts/deploy-gcp.sh scripts/dev-env.sh scripts/e2e-kind.sh scripts/harness.sh scripts/install-tools.sh scripts/render-k8s.sh scripts/repo-guardrails.sh scripts/update-crd-schemas.sh scripts/update-tool-checksums.sh`
+      `git add --chmod=+x scripts/compose-smoke.sh scripts/dast-zap.sh scripts/deploy-gcp.sh scripts/deploy-local.sh scripts/dev-env.sh scripts/e2e-kind.sh scripts/e2e-platform-small.sh scripts/e2e-platform.sh scripts/get-publish-run-metadata.sh scripts/harness.sh scripts/install-crane.sh scripts/install-sonar-scanner.sh scripts/install-tools.sh scripts/publish-ghcr-images.sh scripts/publish-gitops.sh scripts/render-k8s.sh scripts/repo-guardrails.sh scripts/sonar-bootstrap.sh scripts/sonar-service.sh scripts/test-gitleaks-gate.sh scripts/test-sonar-gate.sh scripts/test-zap-gate.sh scripts/update-crd-schemas.sh scripts/update-tool-checksums.sh scripts/verify-ci-image-artifact.sh scripts/verify-release-bundle.sh`
       (o check `repo-structure` confere o índice do git).
-- [ ] Primeiro commit feito e enviado para `main` (privado) e CI verde (`static`, `test`, `images`, `e2e`).
+- [ ] Primeiro commit feito e enviado para `main` (privado) e CI verde (`static`, `test`, `images`, `e2e`, `e2e-platform`).
 - [ ] `gitleaks git` limpo no histórico completo (o check `gitleaks` faz isso quando há commits).
 - [ ] Nenhum identificador real: `policy-identifiers` verde (projetos, números, e-mails, GUIDs, IPs) e
       uma leitura humana de `docs/`.
@@ -52,7 +52,18 @@ Mudar um id quebra a proteção. Ids atuais:
 | `ci.yml` | `test` | sim |
 | `ci.yml` | `images` | sim |
 | `ci.yml` | `e2e` | sim |
+| `ci.yml` | `e2e-platform` | sim |
 | `deploy-gcp.yml` | `deploy` | não (só `workflow_dispatch`, environment `lab`; o check `policy-workflows` exige o id) |
+
+## Release e deploy manuais
+
+`publish-images` e `deploy-gcp` são workflows `workflow_dispatch`; nenhum deles é disparado pelo CI
+normal. `publish-images`, executado a partir de `main`, recebe `ci_run_id` e só publica os image IDs
+de um CI bem-sucedido nos cinco checks obrigatórios. O bundle contém os SBOMs e as attestations da
+release. `deploy-gcp`, também executado a partir de `main`, recebe o `release_run_id`; `verify-release`
+valida novamente a origem, os digests, os hashes dos SBOMs e o signer antes do environment `lab` e
+antes da autenticação WIF. O job de deploy promove os digests sem rebuild. Até uma execução manual
+ser autorizada e registrada, a publicação GHCR e o deploy cloud continuam sem evidência de execução.
 
 ## Depois de publicar
 

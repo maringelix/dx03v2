@@ -72,16 +72,22 @@ pointing to the original repositories: change them if you like, nothing depends 
 
 ## 7. Deploy to your own Google Cloud project (costs money)
 
-Only after tx03v2 is applied in your project
-([its FORK.md](https://github.com/maringelix/tx03v2/blob/main/FORK.md), step 7). Its bootstrap prints
-the repository variables of this fork (`github_variables_dx03v2`: `GCP_PROJECT_ID`,
-`GCP_WORKLOAD_IDENTITY_PROVIDER` and `GCP_DEPLOY_SERVICE_ACCOUNT`); then run `deploy-gcp` from the
-Actions tab and approve the `lab` environment. The workflow builds and pushes the images, publishes
-the GitOps revision, waits for Argo CD and runs the smoke test through the GKE Gateway:
-[docs/RUNBOOK.md](docs/RUNBOOK.md), sections 5 to 9. Destroy the lab from tx03v2 on the same day.
+First complete the Google Cloud setup and the `tx03v2` full platform steps in its `FORK.md`. Set the
+three repository variables in `docs/RUNBOOK.md` section 6 and protect the `lab` environment.
 
-Your fork is public, and so are its workflow logs. The deploy masks the project ID and the service
-account e-mails; never paste credentials or those values into an issue or a pull request.
+The release uses two manual workflows, both dispatched from `main`:
+
+1. Run `publish-images` with `ci_run_id` set to a successful CI run for the current `main` commit. It
+   verifies the five required checks, publishes the already-tested image IDs to GHCR without rebuild,
+   and creates SBOMs and Sigstore attestations.
+2. Run `deploy-gcp` with `release_run_id` set to that publisher run. The workflow re-verifies the CI,
+   image digests, SBOM hashes and attestations before the `lab` environment approval. After approval,
+   it uses Workload Identity Federation and promotes those exact digests to Artifact Registry, then
+   deploys by Argo CD GitOps.
+
+The normal workflow requires the `tx03v2` `full` profile and the `dx03v2` Argo CD Application. It does
+not rebuild or publish a different image. A direct `DEPLOY_MODE=push` run is available for a deliberate
+manual exercise without Argo CD; see `docs/RUNBOOK.md` and use the same verified release bundle.
 
 ## 8-9. Report the run and keep the fork up to date
 

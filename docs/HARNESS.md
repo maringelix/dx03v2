@@ -2,7 +2,7 @@
 
 O harness é o conjunto de checks que prova o que este repositório afirma, sem conta na nuvem.
 Ele vive em `scripts/harness.sh`; o `Makefile` e o CI só o chamam. O que passa localmente com
-`HARNESS_STRICT=1` passa no CI (jobs `static`, `test`, `images` e `e2e`: `verificado no CI`) e
+`HARNESS_STRICT=1` passa no CI (jobs `static`, `test`, `images`, `e2e` e `e2e-platform`: `verificado no CI`) e
 localmente em containers Linux.
 
 ## Camadas
@@ -29,36 +29,35 @@ localmente em containers Linux.
 O smoke do compose (`scripts/compose-smoke.sh`) usa o mesmo `e2e/smoke.mjs`, mas roda à mão (fora
 do CI): ver `docs/RUNBOOK.md`.
 
-## Teste offline do deploy (procedimento local, não é um check)
+## Release e deploy
 
-Antes do primeiro push, o `scripts/deploy-gcp.sh` foi exercitado de ponta a ponta sem nuvem, num
-container Linux: uma cópia temporária do repositório com um commit descartável, `gcloud`, `kubectl`
-(o `kubectl kustomize` é o binário real), `docker` e o `node` da chamada do smoke substituídos por
-stubs no PATH que registram cada chamada, e `curl`/`openssl` reais (download real do bundle
-`us-central1.pem`: raiz + 3 subordinadas conferidas). 13 cenários, todos com o resultado esperado:
+`publish-images` é manual e publica no GHCR os mesmos image IDs aprovados pelo CI, com SBOM SPDX e
+attestations verificáveis. O workflow `deploy-gcp` recebe o ID dessa publicação, confere o CI de
+origem, digests, hashes dos SBOMs e identidade do signer antes do environment `lab` e repete a
+verificação antes de pedir credenciais do Google Cloud. Depois da aprovação, o deploy promove os
+digests exatos para o Artifact Registry com `crane`, sem rebuild, e grava os digests no GitOps.
 
-- passam (saída 0): `gcp-waf` com a política do Cloud Armor (27 objetos renderizados) e `none`
-  (overlay `gcp`, 25 objetos, e o `delete` das GCPBackendPolicies);
-- recusados antes de qualquer escrita: chave a mais, chave faltando, projeto diferente, faixas do
-  load balancer alargadas, `db/endpoint-ip` fora da subnet dos nós, Gateway programado noutro
-  endereço, RBAC negada, bundle com duas raízes, raiz errada, subordinada estranha e working tree
-  sujo (este sem nenhuma chamada externa).
+O harness verifica a estrutura desses fluxos, os parâmetros e que o script recusa releases inválidas;
+nenhuma publicação real ou execução em nuvem foi feita nesta rodada. O deploy continua
+`não executado em nuvem (v2)`.
 
-O smoke em si não rodou (o stub do `node` só registra a chamada com `SMOKE_EDGE=gke`). Para repetir:
-copie o repositório para um diretório temporário, faça um commit descartável, ponha stubs que
-devolvam um parâmetro de contrato de exemplo (os valores de `params.example.env`) e respostas `yes`
-do `kubectl auth can-i`, e confira a ordem das chamadas e as recusas. Nada disso vale como rodada em
-nuvem.
+## DevSecOps
+
+O job `test` avalia o SARIF do CodeQL `security-extended` e roda o Quality Gate de um SonarQube real
+descartável, incluindo uma fixture negativa que deve reprovar. O job `images` executa OWASP ZAP
+Baseline contra o Compose descartável; `make dast` permite repetir a varredura localmente. Os gates
+de Gitleaks, Trivy, CodeQL, Sonar e ZAP são bloqueantes e têm testes de rejeição quando aplicável;
+detalhes e limites estão em `docs/SEGURANCA_CI.md`.
 
 ## Jobs do CI
 
 | Job (`ci.yml`) | Alvo | Estágio do harness |
 |---|---|---|
 | `static` | `make tools && make static` | `static` |
-| `test` | `make test` (service `postgres:17-alpine` por digest, `DB_*` no ambiente) | `test` |
-| `images` | build com buildx + cache do GitHub Actions, depois `make tools && make build` com `IMAGES_PREBUILT=1`; as duas imagens viram um artefato | `build` |
+| `test` | CodeQL `security-extended`, `make test` contra PostgreSQL 17 descartável, SonarQube com Quality Gate real e fixture negativa; SARIF como artefato | `test` |
+| `images` | build com buildx + cache do GitHub Actions, `make tools && make build`, ZAP Baseline contra Compose descartável; as duas imagens viram um artefato | `build` + `dast` |
 | `e2e` | carrega o artefato, `bash scripts/install-tools.sh kind kubectl`, `make e2e` com `E2E_SKIP_BUILD=1`; diagnósticos como artefato em caso de falha | `e2e` |
-| `e2e-platform` | carrega o artefato, `make e2e-platform` com `E2E_SKIP_BUILD=1`: clona o tx03v2 no commit de `deploy/local/tx03v2.ref`, sobe o lab local completo, faz o deploy GitOps e roda as sondas (`docs/LAB_LOCAL.md`); log completo e diagnósticos como artefato em caso de falha | `platform` |
+| `e2e-platform` | carrega o artefato, `make e2e-platform` com `E2E_SKIP_BUILD=1`: clona o tx03v2 no commit de `deploy/local/tx03v2.ref`, sobe o lab local completo, faz o deploy GitOps e roda as sondas (`docs/LAB_LOCAL.md`); diagnósticos como artefato | `platform` |
 | `e2e-platform-small` | carrega o artefato, `make e2e-platform-small` com `E2E_SKIP_BUILD=1`: o mesmo e2e com `LOCAL_SIZE=small` dentro de um Docker-in-Docker limitado a 7 GB, sem swap; picos de memória e OOM kills no resumo do job; diagnósticos como artefato. Não é check exigido | `platform-small` |
 
 Os ids `static`, `test`, `images`, `e2e` e `e2e-platform` são estáveis: são os checks exigidos pelo
@@ -151,7 +150,7 @@ temporários. No repositório ficam só `.tools/`, `node_modules/` e `*/dist/` (
 | `FAIL crd-schemas` | arquivo de `deploy/k8s/schemas` editado à mão, ou o gerador mudou | `scripts/update-crd-schemas.sh <versão da Gateway API> <commit do catálogo>` (os de `source.env`) e commit do resultado |
 | `FAIL crd-schemas ... download failed` / SHA-256 diferente | sem rede, ou o GitHub devolveu outro conteúdo | confira a rede; um SHA-256 diferente nunca é aceito (pare e investigue) |
 | `FAIL kubeconform ... could not find schema` | sem rede, ou schema do catálogo que o kubeconform não compila | confira a rede; os commits dos catálogos estão fixados em `scripts/harness.sh` |
-| `FAIL contract-app` | manifest, parâmetro ou `scripts/deploy-gcp.sh` divergente do contrato v2 ou do hardening | corrija; mudança de contrato exige PR coordenado com o tx03v2 |
+| `FAIL contract-app` | manifest, parâmetro ou `scripts/deploy-gcp.sh` divergente do contrato v3 ou do hardening | corrija; mudança de contrato exige PR coordenado com o tx03v2 |
 | `FAIL policy-workflows` | `deploy-gcp.yml` sem o passo `Check repository variables`, com outra versão do `auth`/`setup-gcloud`, sem `version:` do gcloud, ou com chave de conta de serviço | siga a mensagem; o deploy é só Workload Identity Federation |
 | `FAIL policy-images ... gha-creds` | um `.dockerignore`/`Dockerfile.dockerignore` deixou o arquivo de credenciais entrar no contexto | acrescente `**/gha-creds-*.json` ao arquivo |
 | `FAIL policy-cloud` | algo do caminho de outra nuvem (nome de arquivo, serviço, região) fora de README, ARQUITETURA e CHANGELOG | remova ou descreva em termos do Google Cloud |

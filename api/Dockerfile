@@ -28,9 +28,10 @@ RUN npm ci --workspace api --include-workspace-root=false --omit=dev --ignore-sc
 # variant suggested by the spec is no longer rebuilt (still Node 24.14.0): see docs/ARQUITETURA.md.
 FROM gcr.io/distroless/nodejs24-debian13:nonroot@sha256:9eeb7f5887d0e239e78264b06f7f11d2e14be534050481803a9e4728fcdd278e AS runtime
 ARG GIT_SHA=unknown
+ARG SOURCE_REPOSITORY=maringelix/dx03v2
 LABEL org.opencontainers.image.title="dx03v2-api" \
       org.opencontainers.image.description="dx03v2 message board API (Express 5, PostgreSQL 17)" \
-      org.opencontainers.image.source="https://github.com/maringelix/dx03v2" \
+      org.opencontainers.image.source="https://github.com/${SOURCE_REPOSITORY}" \
       org.opencontainers.image.revision="${GIT_SHA}" \
       org.opencontainers.image.licenses="MIT"
 ENV NODE_ENV=production \

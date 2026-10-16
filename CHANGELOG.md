@@ -7,6 +7,17 @@ All notable changes to this project are documented here. The format follows
 ## [Unreleased]
 ### Added
 
+- CodeQL `security-extended` with a SARIF gate, a disposable SonarQube Quality Gate with a negative
+  coverage fixture, the Gitleaks negative test and OWASP ZAP Baseline against the disposable Compose
+  app. The reports and the exact tested image IDs are retained as CI artifacts.
+- Manual `publish-images` and `deploy-gcp` release workflows: verify the successful source CI, publish
+  its existing image IDs with SPDX SBOMs and Sigstore attestations, then promote the signed digests
+  without rebuilding. No release or cloud deployment has been dispatched in this change.
+- Additive migration `0002_expand_message_display_name.sql` and integration coverage for safe rollout
+  and application rollback without rolling back the database schema.
+- R7.2 adds a local release rollback drill: a reader sees zero failed requests while GitOps restores
+  the previous image after an unavailable candidate; the additive database migration remains. The
+  platform suite now has 19 probes, with the smoke test last because it consumes the write limit.
 - Cloud deploy now publishes the app source revision to `gitops/gcp` with example parameters, then
   waits for Argo CD to report that exact revision `Synced` and `Healthy`. Direct push remains
   available through the script when Argo CD is not managing the app; the Actions workflow always
@@ -17,6 +28,11 @@ All notable changes to this project are documented here. The format follows
 
 ### Security
 
+- The release verifier checks the publisher run, source CI, image digests, SBOM checksums and signer
+  identity before the `lab` environment and again before Workload Identity Federation issues cloud
+  credentials. `crane` copies by digest; the deploy path never rebuilds or pushes an unverified image.
+- CodeQL, SonarQube, Gitleaks and ZAP gates include negative cases and fail closed. ZAP targets a
+  disposable Compose stack; no cloud endpoint or secret is scanned.
 - `deploy/local/tx03v2.ref` pins the local platform to the merged tx03v2 R4 commit, so
   `e2e-platform` and `family-ref` check the integrated infrastructure.
 
@@ -50,6 +66,10 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- The platform end-to-end smoke runs after the GitOps rollout installs the PR image; the earlier
+  platform setup deliberately starts with the previous `main` image for rollback coverage.
+- The GCP deployment accepts a `release_run_id`, promotes verified digests through the repository-
+  scoped Artifact Registry writer identity, and records both immutable digests in GitOps.
 - `deploy/local/tx03v2.ref` follows tx03v2 to `bd8978d` (tx03v2#9: the External Secrets of the local lab without the Autopilot CPU limits, and S.8).
 - Comments, script messages and docs say "the contract" or point to `docs/CONTRATO.md` instead of
   "contract v1": the contract has been at version 2 since round 1 (roadmap S.8); the README says the deploy script follows contract v2 and HTTPS is outside it.
@@ -105,7 +125,7 @@ All notable changes to this project are documented here. The format follows
   tx03v2 writes them to Cloud Trace). NetworkPolicies widened only for that: API → Collector (4318)
   and Gateway → Collector (4317, its spans), both over HBONE (15008) in the mesh; `contract-app`
   asserts both.
-- `make e2e-platform` has 18 probes (was 13): one trace in Tempo from the Gateway to the query, the
+- `make e2e-platform` had 18 probes after R4.3 (was 13): one trace in Tempo from the Gateway to the query, the
   `trace_id` in the log lines in Loki and in an exemplar in Prometheus; a zero-downtime rollout; 200 ms
   of latency between the API and PostgreSQL (NetworkChaos), every read passes and the trace shows the
   delay in the query span.

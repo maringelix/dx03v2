@@ -41,30 +41,28 @@ The lab family (v2):
 | Lint, formatting and type checks (eslint, prettier, tsc for `api` and `web`) | `verified in CI` | `make static` (`eslint`, `prettier`, `typecheck:*`); CI job `static` |
 | Dockerfiles, workflows and scripts (hadolint, actionlint, shellcheck) | `verified in CI` | `make static` (`hadolint`, `actionlint`, `shellcheck`) |
 | Kubernetes manifests: kustomize render + kubeconform strict (local, gcp, gcp-waf) with Gateway API v1.5.0 schemas generated from the official release asset and the `networking.gke.io` schemas of a pinned catalog commit, contract and hardening assertions, trivy config | `verified in CI` | `make static` (`crd-schemas`, `kubeconform`, `contract-app`, `trivy-config`) |
-| Deploy script against contract v2 (the 15 Parameter Manager keys, fixed values, Cloud SQL CA root, both overlays, read-only gcloud calls) | `verified in CI` | `make static` (`contract-app`) |
+| Deploy script against contract v3 (the 15 Parameter Manager keys, fixed values, Cloud SQL CA root, both overlays, read-only gcloud calls) | `verified in CI` | `make static` (`contract-app`) |
 | Secret scan and repository policies (placeholder identifiers only, pinned actions and images, Workload Identity Federation only, v1 regressions, no leftovers of the AWS or Azure paths) | `verified in CI` | `make static` (`gitleaks`, `policy-*`, `repo-structure`, `version-consistency`) |
 | API unit + integration tests against a real PostgreSQL 17 (coverage gate: lines >= 80 %, branches >= 70 %), including the `X-Forwarded-For` of the Google Cloud load balancer | `verified in CI` | `make test` (`test:api`); CI job `test` |
 | Web tests with Testing Library + jsdom (coverage gate: lines >= 70 %) | `verified in CI` | `make test` (`test:web`); CI job `test` |
 | Images: build, numeric non-root user, no npm or shell in the API runtime, trivy HIGH/CRITICAL gate | `verified in CI` | `make build`; CI job `images` |
+| DevSecOps: CodeQL `security-extended`, SonarQube Quality Gate with a negative test, Gitleaks negative gate, and OWASP ZAP Baseline | `verified in CI` | `make static`, `make test`, `make dast`; CI jobs `static`, `test`, `images`; `docs/SEGURANCA_CI.md` |
+| Signed release path: GHCR gets the CI-tested image IDs, SPDX SBOMs and Sigstore attestations; the release verifier rejects wrong sources and signers | `implemented; not published yet` | `publish-images`, release-bundle checks; no release has been published |
 | Compose stack (PostgreSQL → migrate → api → web on 127.0.0.1) + smoke test | `verified locally` | `scripts/dev-env.sh`, `scripts/compose-smoke.sh` (manual, not part of CI) |
 | kind end-to-end: Pod Security `restricted`, smoke test through nginx, NetworkPolicy enforcement | `verified in CI` | `make e2e` (`scripts/e2e-kind.sh`); CI job `e2e` |
 | Google Cloud deploy (Artifact Registry, GKE Autopilot of tx03v2, ExternalSecrets, GKE Gateway + Cloud Armor, traces to the OpenTelemetry Collector and Cloud Trace, smoke test; the workflow uses Argo CD GitOps, with direct push available through the script) | `not run in the cloud (v2)` | `.github/workflows/deploy-gcp.yml`, `scripts/deploy-gcp.sh`, `docs/RUNBOOK.md` |
-| HTTPS on the Gateway listener | `planned` | needs a certificate; outside contract v2 (`docs/CONTRATO.md`) |
+| HTTPS on the Gateway listener | `planned` | needs a certificate; outside contract v3 (`docs/CONTRATO.md`) |
 | Overlay `local-platform` for the tx03v2 local lab: kustomize render + kubeconform strict, assertions against the local contract and the kinds of the AppProject `dx03v2`, five alert rules tested with promtool | `verified in CI` | `make static` (`kubeconform`, `contract-app`, `promtool-rules`) in a Linux container; CI job `static` |
 | **The app on the full local platform of tx03v2** (kind + emulated Artifact Registry, Cloud SQL, object storage, load balancer, git server): images to the lab registry, GitOps with Argo CD (Synced, Healthy, self-heal) | `verified in CI` | `make e2e-platform` (`scripts/deploy-local.sh`, `scripts/e2e-platform.sh`, `docs/LAB_LOCAL.md`); CI job `e2e-platform` |
 | HTTPS through the emulated load balancer and an Istio Gateway (cert-manager, lab CA), smoke test from outside the mesh (`SMOKE_EDGE=istio`); database TLS `verify-full` | `verified in CI` | `make e2e-platform` (probe `smoke`) |
 | Istio ambient: mTLS `STRICT`, `AuthorizationPolicy` by identity, NetworkPolicies with HBONE; Prometheus, Grafana dashboard, Loki; Gatekeeper, Trivy Operator, HPA 2-4; database backup + restore drill; chaos experiments with hypotheses (one API pod killed; 200 ms between the API and PostgreSQL) | `verified in CI` | `make e2e-platform` (probes `mesh`, `observability`, `trivy`, `hpa`, `backup`, `chaos`) |
 | Traces with OpenTelemetry: one trace in Tempo from the Istio Gateway to the PostgreSQL query (W3C trace context), `trace_id` in the logs in Loki, exemplars in the latency histogram | `verified in CI` | API tests (`telemetry`, `tracing`); `make e2e-platform` (probe `tracing`) |
 | Zero-downtime rollout: a new version through GitOps, no failed request from a reader during the rolling update | `verified in CI` | `make e2e-platform` (probe `rollout`) |
-| The same 18 probes in 7 GB of Docker memory: the platform at the small size (`LOCAL_SIZE=small`), inside a Docker-in-Docker without swap | `verified in CI` | `make e2e-platform-small` (`scripts/e2e-platform-small.sh`); CI job `e2e-platform-small` |
+| Release rollback: a not-ready image is rejected, the last ready replicas serve traffic, GitOps restores the previous image and keeps the expanded database schema | `implemented; CI validation in this PR` | `make test` (failed migration is atomic) and `make e2e-platform` (probe `rollback`); `docs/MIGRATIONS.md` |
+| The same 19 probes in 7 GB of Docker memory: the platform at the small size (`LOCAL_SIZE=small`), inside a Docker-in-Docker without swap | `implemented; CI validation in this PR` | `make e2e-platform-small` (`scripts/e2e-platform-small.sh`); CI job `e2e-platform-small` |
 | Repository settings as code (ruleset, environment `lab`) | `verified locally` | `scripts/repo-guardrails.sh` applied; read back with `gh api` on 2026-10-14 (`docs/PUBLICACAO.md`) |
 
-`verified in CI` rows run in the CI jobs of the Evidence column (`HARNESS_STRICT=1`, on every pull
-request, every push to `main` and weekly) and pass locally in Linux containers. The compose row
-stays `verified locally`. `scripts/deploy-gcp.sh` was also run offline
-against stub `gcloud`/`kubectl`/`docker` (13 scenarios, docs/HARNESS.md); that is not a cloud run.
-The Google Cloud row changes only with a `cloud_run_report` issue (date, region, commits, cost,
-smoke output, leftovers).
+`verified in CI` rows reflect only checks that pass. Compose and repository guardrails remain `verified locally`. The `publish-images` and `deploy-gcp` workflows are manual; neither has been dispatched in this round, and no GHCR release or cloud deployment has been published. The Google Cloud row changes only with a `cloud_run_report` issue (date, region, commits, cost, smoke output, leftovers).
 
 ## Architecture
 
@@ -130,8 +128,9 @@ use another currency: see the [tx03v2 cost doc](https://github.com/maringelix/tx
 Use a dedicated project with a budget and destroy on the same day.
 
 Follow [docs/RUNBOOK.md](docs/RUNBOOK.md): tx03v2 bootstrap/apply/platform → GitHub variables of
-dx03v2 → `deploy-gcp` workflow (Argo CD GitOps) → smoke test through
-the load balancer → tx03v2 destroy + leftover check → `cloud_run_report` issue.
+dx03v2 → `publish-images` with a successful `ci_run_id` from `main` → `deploy-gcp` with that
+publisher's `release_run_id` and approval of environment `lab` → smoke test through the load balancer
+→ tx03v2 destroy + leftover check → `cloud_run_report` issue.
 
 ## Harness
 
@@ -143,14 +142,16 @@ the load balancer → tx03v2 destroy + leftover check → `cloud_run_report` iss
 | `make test` | `scripts/harness.sh test` (real PostgreSQL 17: `DB_*` or a throwaway container) | before every push |
 | `make verify` | static + test | before every PR |
 | `make build` | `scripts/harness.sh build`: npm build, images, image policy, trivy gate | when code, Dockerfiles or dependencies change |
+| `make dast` | OWASP ZAP Baseline against the disposable Compose app | after an app or security change; also runs in CI |
 | `make e2e` | `scripts/harness.sh e2e`: kind cluster, smoke test, NetworkPolicy probes | when manifests, images or the app change |
 | `make e2e-platform` | `scripts/harness.sh platform`: the app on the full tx03v2 local platform (clones tx03v2 at `deploy/local/tx03v2.ref`), always torn down (CI job `e2e-platform`) | manifest, image or app changes; needs Docker with 8 GB, or 7 GB with `LOCAL_SIZE=small` |
 | `make e2e-platform-small` | `scripts/harness.sh platform-small`: the same e2e at the small size inside a Docker limited to 7 GB, with the peak memory and any OOM kill in the job summary (CI job `e2e-platform-small`) | heavy, meant for the CI runner; on a laptop run `LOCAL_SIZE=small make e2e-platform` |
-| `make all` | every stage | before a release-like merge |
+| `make all` | static + test + build + kind e2e; DAST and full platform e2e stay separate | before a release-like merge |
 | `make clean` | removes `.tools/`, build output, coverage, `node_modules` and scratch data | — |
 
 `scripts/harness.sh list` prints every check. The `deploy-gcp` workflow installs the Google Cloud
-CLI 588.0.0 with `gke-gcloud-auth-plugin`; you need your own gcloud only for the cloud path.
+CLI 588.0.0 with `gke-gcloud-auth-plugin`, pinned `kubectl` and `crane`; you need your own gcloud only
+for a deliberate local cloud deploy.
 Details: [docs/HARNESS.md](docs/HARNESS.md).
 
 ## Docs
@@ -162,8 +163,10 @@ All docs are in Brazilian Portuguese.
 | [FORK.md](FORK.md) | fork the lab: what GitHub does not copy, the local lab, your own cloud account |
 | [docs/ARQUITETURA.md](docs/ARQUITETURA.md) | diagrams (local, kind, Google Cloud), decisions, AWS / Azure / Google Cloud, v1 → v2 |
 | [docs/API.md](docs/API.md) | endpoints, errors, curl examples |
-| [docs/CONTRATO.md](docs/CONTRATO.md) | tx03v2 ⇄ dx03v2 contract v2 (app side; source of truth in tx03v2) |
+| [docs/CONTRATO.md](docs/CONTRATO.md) | tx03v2 ⇄ dx03v2 contract v3 (app side; source of truth in tx03v2) |
 | [docs/RUNBOOK.md](docs/RUNBOOK.md) | local development, compose, kind e2e, Google Cloud deploy |
+| [docs/SEGURANCA_CI.md](docs/SEGURANCA_CI.md) | CodeQL, SonarQube, Trivy, Gitleaks and ZAP gates |
+| [docs/MIGRATIONS.md](docs/MIGRATIONS.md) | additive schema changes and rollback rules |
 | [docs/LAB_LOCAL.md](docs/LAB_LOCAL.md) | the app on the tx03v2 local platform (GitOps deploy, probes, limits) |
 | [docs/GUARDRAILS.md](docs/GUARDRAILS.md) | rules, enforcement, exceptions, limits |
 | [docs/HARNESS.md](docs/HARNESS.md) | checks, strict mode, the offline deploy test, troubleshooting |

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Deploys dx03v2 to the GKE Autopilot lab cluster of tx03v2 (docs/CONTRATO.md).
-# CLOUD-MUTATING and billable: pushes images to Artifact Registry and makes the GKE Gateway
+# CLOUD-MUTATING and billable: promotes signed image digests to Artifact Registry and makes the GKE Gateway
 # controller program a global external Application Load Balancer (forwarding rule, backend
 # services, NEGs and, with the WAF, the Cloud Armor policy of tx03v2), which with Cloud SQL is the
 # biggest cost item of the Google Cloud lab. Run it only on purpose, after the tx03v2 apply +
@@ -11,22 +11,22 @@
 #   gcloud auth login && GCP_PROJECT_ID=tx03v2-lab-example scripts/deploy-gcp.sh
 # Environment:
 #   GCP_PROJECT_ID      required: the project of the lab (the script never guesses it)
-#   GIT_SHA             commit to deploy (default: HEAD); must be the checked-out commit, and the
+#   RELEASE_DIR         verified release bundle (manifest and two SPDX files)
 #                       working tree must be clean (the images are tagged with it)
-#   DEPLOY_MODE         gitops (default: publish to gitops/gcp and wait for Argo CD) or push
-#   GITHUB_TOKEN        optional locally; Actions uses it for the GitOps branch push
+#   GH_TOKEN            token with actions:read, attestations:read and packages:read
+#   GITHUB_REPOSITORY, GITHUB_ACTOR  repository and GHCR user used to verify/promote the release
 #   ARGO_SYNC_TIMEOUT  seconds to wait for the Argo CD Application (default 600)
 #   SMOKE_WAIT_SECONDS  how long the smoke test waits for the load balancer (default 900)
 # Steps: Parameter Manager contract (tx03v2-lab-contract) -> GKE kubeconfig (DNS endpoint,
 # gke-gcloud-auth-plugin) -> API groups, GatewayClass and RBAC preflight -> Artifact Registry
-# login and tag check -> images (linux/amd64 build + push; an existing tag is never pushed again)
+# verify signed release -> promote exact image digests to Artifact Registry (no rebuild)
 # -> ConfigMap cloudsql-ca (regional Cloud SQL CA bundle, contract root checked) -> configure Argo CD
 # and publish gitops/gcp (default) -> sync -> ExternalSecrets -> rollouts -> Gateway programmed on
 # the contract address -> smoke test through the load balancer. DEPLOY_MODE=push applies directly.
 # gcloud is the only credential holder: in GitHub Actions google-github-actions/auth writes a
 # Workload Identity Federation credentials file that gcloud refreshes for the whole job, and kubectl
 # gets its tokens from gcloud through gke-gcloud-auth-plugin. The Artifact Registry login of the
-# run goes to a temporary Docker configuration directory (DOCKER_CONFIG), never to ~/.docker.
+# crane auth uses a temporary Docker-compatible config under WORK_DIR, never ~/.docker.
 set -euo pipefail
 
 # shellcheck source=scripts/lib/common.sh
@@ -74,14 +74,19 @@ DEPLOY_RESOURCES=(
 READ_RESOURCES=(secrets pods pods/log events replicasets.apps)
 
 declare -A PARAM=()
-declare -a TO_BUILD=()
 WORK_DIR=""
 GROUP_OPEN=0
 OVERLAY=gcp-waf
 REGISTRY_HOST=""
-REGISTRY_LOGGED_IN=0
 API_IMAGE=""
 WEB_IMAGE=""
+RELEASE_MANIFEST=""
+API_SOURCE_NAME=""
+API_SOURCE_DIGEST=""
+API_IMAGE_ID=""
+WEB_SOURCE_NAME=""
+WEB_SOURCE_DIGEST=""
+WEB_IMAGE_ID=""
 GATEWAY_ADDRESS=""
 BASE=""
 DEPLOY_MODE="${DEPLOY_MODE:-gitops}"
@@ -147,7 +152,8 @@ write_summary() { # RESULT
     echo "|---|---|"
     echo "| Commit | \`${GIT_SHA:-unknown}\` |"
     echo "| Overlay | \`deploy/k8s/overlays/$OVERLAY\` |"
-    echo "| Images | \`dx03v2/api:${GIT_SHA:-}\`, \`dx03v2/web:${GIT_SHA:-}\` in Artifact Registry |"
+    echo "| API image | \`${API_IMAGE:-not promoted}\` |"
+    echo "| Web image | \`${WEB_IMAGE:-not promoted}\` |"
     echo "| Entry point | ${BASE:-not reached} |"
     if [[ -f "$WORK_DIR/smoke.txt" ]]; then
       echo
@@ -165,9 +171,6 @@ cleanup() {
   if ((GROUP_OPEN)); then
     echo "::endgroup::"
   fi
-  if ((REGISTRY_LOGGED_IN)); then
-    docker logout "https://$REGISTRY_HOST" >/dev/null 2>&1 || :
-  fi
   if [[ -n "$WORK_DIR" ]]; then
     if ((rc == 0)); then
       write_summary succeeded
@@ -179,52 +182,55 @@ cleanup() {
   exit "$rc"
 }
 
-# private_docker_config -> the registry login of this run lives in a Docker configuration directory of
-# its own (under WORK_DIR): ~/.docker/config.json, with your other logins and your current context, is
-# never written, and the token goes away with the directory. The daemon stays the one of the current
-# context, and the CLI plugins (buildx) of the Docker directory of the machine keep working.
-private_docker_config() {
-  local host plugins="${DOCKER_CONFIG:-$HOME/.docker}/cli-plugins"
-  if [[ -z "${DOCKER_HOST:-}" ]]; then
-    host="$(docker context inspect --format '{{.Endpoints.docker.Host}}' 2>/dev/null)" || host=""
-    if [[ -n "$host" ]]; then
-      export DOCKER_HOST="$host"
-    fi
-  fi
-  mkdir -p "$WORK_DIR/docker"
-  chmod 700 "$WORK_DIR/docker"
-  if [[ -d "$plugins" ]]; then
-    ln -s "$plugins" "$WORK_DIR/docker/cli-plugins"
-  fi
-  export DOCKER_CONFIG="$WORK_DIR/docker"
-}
+# private_registry_config -> registry credentials stay in a temporary Docker-compatible directory
+# under WORK_DIR and are removed on exit; no credential is written to ~/.docker/config.json.
+# Crane reads this private config while copying the signed image digests.
 
+private_registry_config() {
+  mkdir -p "$WORK_DIR/registry"
+  chmod 700 "$WORK_DIR/registry"
+  export DOCKER_CONFIG="$WORK_DIR/registry"
+}
 preflight() {
-  local head account
-  require_cmd gcloud gke-gcloud-auth-plugin kubectl docker node git curl base64 openssl awk
+  local head account release_sha
+  require_cmd gcloud gke-gcloud-auth-plugin kubectl node git curl base64 openssl awk gh jq crane
+  for name in GITHUB_REPOSITORY GITHUB_ACTOR; do
+    [[ -n "${!name:-}" ]] || die "$name is required to verify and promote the signed release"
+  done
+  [[ -n "${RELEASE_DIR:-}" ]] || die "RELEASE_DIR is required; publish and verify a release first"
+  [[ "${RELEASE_RUN_ID:-}" =~ ^[1-9][0-9]*$ ]] || die "RELEASE_RUN_ID must be the successful publish-images run id"
+  [[ -n "${GH_TOKEN:-}" ]] || die "GH_TOKEN with actions:read, attestations:read and packages:read is required"
+  RELEASE_MANIFEST="$RELEASE_DIR/release-manifest.json"
+  bash "$REPO_ROOT/scripts/verify-release-bundle.sh"
+  API_SOURCE_NAME="$(jq -er '.images.api.name' "$RELEASE_MANIFEST")"
+  API_SOURCE_DIGEST="$(jq -er '.images.api.digest' "$RELEASE_MANIFEST")"
+  API_IMAGE_ID="$(jq -er '.images.api.image_id' "$RELEASE_MANIFEST")"
+  WEB_SOURCE_NAME="$(jq -er '.images.web.name' "$RELEASE_MANIFEST")"
+  WEB_SOURCE_DIGEST="$(jq -er '.images.web.digest' "$RELEASE_MANIFEST")"
+  WEB_IMAGE_ID="$(jq -er '.images.web.image_id' "$RELEASE_MANIFEST")"
+  release_sha="$(jq -er '.source.sha' "$RELEASE_MANIFEST")"
+  if [[ -n "${GIT_SHA:-}" && "$GIT_SHA" != "$release_sha" ]]; then
+    die "GIT_SHA does not match the verified release source commit $release_sha"
+  fi
+  head="$(git -C "$REPO_ROOT" rev-parse HEAD)"
+  [[ -z "$(git -C "$REPO_ROOT" status --porcelain)" ]] ||
+    die "the working tree has uncommitted changes"
+  [[ "$release_sha" == "$head" ]] ||
+    die "the verified release source commit must match the checked-out commit"
+  GIT_SHA="$release_sha"
   [[ -n "${GCP_PROJECT_ID:-}" ]] || die "GCP_PROJECT_ID is required (the project of the lab; the script never guesses it)"
   [[ "$GCP_PROJECT_ID" =~ ^$K8S_GCP_PROJECT$ ]] || die "GCP_PROJECT_ID is not a Google Cloud project ID"
   [[ "$DEPLOY_MODE" == gitops || "$DEPLOY_MODE" == push ]] || die "DEPLOY_MODE must be gitops or push"
-  if [[ ! "$ARGO_SYNC_TIMEOUT" =~ ^[1-9][0-9]*$ ]]; then
-    die "ARGO_SYNC_TIMEOUT must be an integer of at least 5 seconds"
-  fi
-  if ((ARGO_SYNC_TIMEOUT < 5)); then
+  if [[ ! "$ARGO_SYNC_TIMEOUT" =~ ^[1-9][0-9]*$ ]] || ((ARGO_SYNC_TIMEOUT < 5)); then
     die "ARGO_SYNC_TIMEOUT must be an integer of at least 5 seconds"
   fi
   mask "$GCP_PROJECT_ID"
-  [[ -z "$(git -C "$REPO_ROOT" status --porcelain)" ]] ||
-    die "the working tree has uncommitted changes: the images are built from it and tagged with the commit SHA"
-  head="$(git -C "$REPO_ROOT" rev-parse HEAD)"
-  GIT_SHA="${GIT_SHA:-$head}"
-  [[ "$GIT_SHA" =~ ^[0-9a-f]{40}$ ]] || die "GIT_SHA must be a full 40-character commit SHA"
-  [[ "$GIT_SHA" == "$head" ]] || die "GIT_SHA must be the checked-out commit (the images are built from the working tree)"
   account="$(gcloud auth list --filter=status:ACTIVE --format='value(account)')" ||
     die "cannot query the gcloud credentials"
   [[ -n "$account" ]] ||
     die "gcloud has no active credential (google-github-actions/auth with dx03v2-gha-deploy in GitHub Actions, or gcloud auth login)"
   mask "$account"
 }
-
 read_contract() {
   local payload json lines key value n
   payload="$(gcloud parametermanager parameters versions render latest --parameter="$CONTRACT_PARAMETER" \
@@ -350,44 +356,58 @@ connect_cluster() {
   log "cluster $(param cluster-name): platform API groups served, Role dx03v2-deployer usable in $NAMESPACE"
 }
 
-# prepare_images -> docker login to Artifact Registry and the list of images to build. The
-# repository has immutable tags: an existing tag is reused as is, never pushed again.
-prepare_images() {
-  local packages tags component
-  gcloud auth print-access-token | docker login -u oauth2accesstoken --password-stdin "https://$REGISTRY_HOST" >/dev/null ||
-    die "docker login to $REGISTRY_HOST failed (this identity needs roles/artifactregistry.writer on dx03v2, docs/CONTRATO.md)"
-  REGISTRY_LOGGED_IN=1
-  # Names and tags may come back as full resource paths: only the last segment is compared.
+# Authenticate crane to the verified GHCR source and the contract Artifact Registry destination.
+# Registry credentials stay in a temporary Docker-compatible config under WORK_DIR.
+prepare_registry_auth() {
+  printf '%s' "$GH_TOKEN" | crane auth login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
+  gcloud auth print-access-token |
+    crane auth login "$REGISTRY_HOST" --username oauth2accesstoken --password-stdin
+}
+
+# promote_image COMPONENT SOURCE_NAME SOURCE_DIGEST IMAGE_ID -> exact Artifact Registry digest.
+promote_image() {
+  local component="$1" source_name="$2" source_digest="$3" expected_id="$4"
+  local source_ref="$source_name@$source_digest" target_name="$(param artifact-registry/repository)/$component"
+  local image_tag="$target_name:$GIT_SHA" packages="" tags="" target_digest="" source_id="" target_id=""
+  [[ "$source_digest" =~ ^sha256:[0-9a-f]{64}$ ]] || die "$component release digest is invalid"
+  source_id="$(crane manifest "$source_ref" | jq -er '.config.digest')" ||
+    die "cannot read the image configuration digest for the verified $component release"
+  [[ "$source_id" == "$expected_id" ]] ||
+    die "$component GHCR digest does not contain the image ID from the release manifest"
   packages="$(gcloud artifacts packages list --repository=dx03v2 --location="$(param region)" \
     --project="$GCP_PROJECT_ID" --format='value(name)' | awk -F/ '{ print $NF }')" ||
-    die "cannot list the packages of the Artifact Registry repository dx03v2"
-  for component in api web; do
-    tags=""
-    if grep -qxF "$component" <<<"$packages"; then
-      tags="$(gcloud artifacts docker tags list "$(param artifact-registry/repository)/$component" \
-        --format='value(tag)' | awk -F/ '{ print $NF }')" || die "cannot list the tags of dx03v2/$component"
-    fi
-    if grep -qxF "$GIT_SHA" <<<"$tags"; then
-      log "dx03v2/$component:$GIT_SHA is already in Artifact Registry: reused, never pushed again"
-    else
-      TO_BUILD+=("$component")
-    fi
-  done
+    die "cannot list the packages of Artifact Registry repository dx03v2"
+  if grep -qxF "$component" <<<"$packages"; then
+    tags="$(gcloud artifacts docker tags list "$target_name" --location="$(param region)" \
+      --project="$GCP_PROJECT_ID" --format='value(tag)' | awk -F/ '{ print $NF }')" ||
+      die "cannot list the tags of dx03v2/$component"
+  fi
+  if grep -qxF "$GIT_SHA" <<<"$tags"; then
+    target_digest="$(crane digest "$image_tag")" ||
+      die "cannot resolve the existing Artifact Registry digest for dx03v2/$component:$GIT_SHA"
+    [[ "$target_digest" == "$source_digest" ]] ||
+      die "Artifact Registry tag dx03v2/$component:$GIT_SHA already points to a different digest; refusing to overwrite it"
+  else
+    crane copy --no-clobber "$source_ref" "$image_tag" ||
+      die "cannot promote the verified $component digest into Artifact Registry without rebuilding"
+    target_digest="$(crane digest "$image_tag")" ||
+      die "cannot resolve the promoted Artifact Registry digest for dx03v2/$component:$GIT_SHA"
+    [[ "$target_digest" == "$source_digest" ]] ||
+      die "Artifact Registry changed the approved $component manifest digest (source $source_digest, target $target_digest)"
+  fi
+  target_id="$(crane manifest "$target_name@$target_digest" | jq -er '.config.digest')" ||
+    die "cannot read the promoted $component image configuration digest"
+  [[ "$target_id" == "$expected_id" ]] ||
+    die "promoted $component Artifact Registry image differs from the signed GHCR image"
+  printf '%s' "$target_name@$target_digest"
 }
 
 publish_images() {
-  local component image
-  for component in "${TO_BUILD[@]}"; do
-    image="$API_IMAGE"
-    if [[ "$component" == web ]]; then
-      image="$WEB_IMAGE"
-    fi
-    docker buildx build --platform "$IMAGE_PLATFORM" -f "$REPO_ROOT/$component/Dockerfile" \
-      --build-arg GIT_SHA="$GIT_SHA" -t "$image" --push "$REPO_ROOT"
-  done
-  log "images: built and pushed ${TO_BUILD[*]:-nothing}; deploying dx03v2/api and dx03v2/web at $GIT_SHA"
+  prepare_registry_auth
+  API_IMAGE="$(promote_image api "$API_SOURCE_NAME" "$API_SOURCE_DIGEST" "$API_IMAGE_ID")"
+  WEB_IMAGE="$(promote_image web "$WEB_SOURCE_NAME" "$WEB_SOURCE_DIGEST" "$WEB_IMAGE_ID")"
+  log "promoted the signed API and web digests to Artifact Registry; no image was rebuilt"
 }
-
 # create_cloudsql_ca -> ConfigMap cloudsql-ca with the regional CA bundle of Cloud SQL, after
 # proving that it holds exactly one self-signed root (the contract SHA-256) and only CAs issued by
 # it. The ConfigMap gets the certificates re-encoded by openssl, nothing else of the download.
@@ -456,6 +476,7 @@ write_params() {
 
 write_revision() {
   local file="$1"
+  local api_digest="${API_IMAGE##*@}" web_digest="${WEB_IMAGE##*@}"
   cat >"$file" <<EOF
 apiVersion: v1
 kind: ConfigMap
@@ -468,6 +489,8 @@ data:
   source-commit: "$GIT_SHA"
   api-image-tag: "$GIT_SHA"
   web-image-tag: "$GIT_SHA"
+  api-image-digest: "$api_digest"
+  web-image-digest: "$web_digest"
 EOF
 }
 
@@ -500,11 +523,12 @@ configure_gitops_application() {
   node "$REPO_ROOT/scripts/render-gitops-application.mjs" gcp "$OVERLAY" \
     "$WORK_DIR/params.env" "$REPO_ROOT/deploy/k8s/components/gcp/params.example.env" >"$patch"
   kubectl -n argocd patch application dx03v2 --type merge --patch-file "$patch" >/dev/null
-  log "Argo CD Application source configured for $OVERLAY and image tag $GIT_SHA"
+  log "Argo CD Application source configured for $OVERLAY and the verified image digests"
 }
 
 publish_gitops_revision() {
-  GITOPS_REV="$(bash "$REPO_ROOT/scripts/publish-gitops.sh" gcp "$OVERLAY" "$GIT_SHA")"
+  GITOPS_REV="$(bash "$REPO_ROOT/scripts/publish-gitops.sh" gcp "$OVERLAY" "$GIT_SHA" \
+    "${API_IMAGE##*@}" "${WEB_IMAGE##*@}")"
   [[ "$GITOPS_REV" =~ ^[0-9a-f]{40}$ ]] || die "GitOps branch push returned no commit SHA"
   kubectl -n argocd annotate application dx03v2 argocd.argoproj.io/refresh=normal --overwrite >/dev/null
   log "published origin/gitops/gcp at ${GITOPS_REV:0:7}"
@@ -577,14 +601,12 @@ main() {
   preflight
   WORK_DIR="$(mktemp -d)"
   trap cleanup EXIT
-  private_docker_config
+  private_registry_config
   section "contract: Parameter Manager $CONTRACT_PARAMETER"
   read_contract
   section "cluster $(param cluster-name): kubeconfig, platform API groups, RBAC"
   connect_cluster
-  section "Artifact Registry $REGISTRY_HOST: login and existing tags"
-  prepare_images
-  section "images dx03v2/api and dx03v2/web, tag $GIT_SHA"
+  section "Artifact Registry $REGISTRY_HOST: promote verified image digests"
   publish_images
   section "ConfigMap cloudsql-ca (Cloud SQL CA bundle, contract root checked)"
   create_cloudsql_ca

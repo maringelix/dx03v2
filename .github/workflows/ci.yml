@@ -1,7 +1,8 @@
 # The harness is the CI: the checks live in scripts/harness.sh and every job runs a `make` target
 # (docs/HARNESS.md). The images job builds with buildx + the GitHub Actions cache and then lets the
 # harness check the prebuilt images (IMAGES_PREBUILT=1); e2e loads those exact images into kind.
-# Job ids are stable required status checks (.github/rulesets/main.json): static, test, images, e2e.
+# Job ids are stable required status checks (.github/rulesets/main.json): static, test, images, e2e,
+# e2e-platform. Release publication is a separate manual workflow after these checks pass on main.
 name: ci
 
 on:
@@ -47,7 +48,7 @@ jobs:
 
   test:
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    timeout-minutes: 60
     services:
       postgres:
         # postgres:17-alpine (verified 2026-10-10), same digest as compose.yaml, the local overlay and
@@ -74,6 +75,21 @@ jobs:
           node-version-file: .nvmrc
           cache: npm
 
+      - uses: github/codeql-action/init@48870fdd6b42ee6474ec4207209ff87609271a5e # v4.39.0
+        with:
+          languages: javascript-typescript
+          queries: security-extended
+          build-mode: none
+
+      - uses: github/codeql-action/analyze@48870fdd6b42ee6474ec4207209ff87609271a5e # v4.39.0
+        id: codeql
+        with:
+          output: ${{ runner.temp }}/codeql-results
+          upload: never
+
+      - name: Set CodeQL SARIF path for the harness
+        run: printf 'CODEQL_SARIF_PATH=%s\n' "$RUNNER_TEMP/codeql-results" >> "$GITHUB_ENV"
+
       - run: make test
         env:
           DB_HOST: 127.0.0.1
@@ -82,9 +98,48 @@ jobs:
           DB_USER: dx03v2
           DB_PASSWORD: postgres
 
+      - name: Start disposable SonarQube and PostgreSQL
+        run: bash scripts/sonar-service.sh start
+
+      - name: Install SHA256-pinned SonarScanner CLI
+        run: bash scripts/install-sonar-scanner.sh
+
+      - name: Configure the disposable SonarQube project and gate
+        env:
+          SONAR_HOST_URL: http://127.0.0.1:9000
+          SONAR_PROJECT_KEY: dx03v2
+          SONAR_FIXTURE_PROJECT: dx03v2-gate-fixture
+        run: bash scripts/sonar-bootstrap.sh
+
+      - name: Scan and block on the SonarQube Quality Gate
+        env:
+          SONAR_HOST_URL: http://127.0.0.1:9000
+        run: |
+          "$SONAR_SCANNER" -Dsonar.qualitygate.wait=true -Dsonar.qualitygate.timeout=600
+
+      - name: Prove the SonarQube gate rejects uncovered code
+        env:
+          SONAR_HOST_URL: http://127.0.0.1:9000
+          SONAR_FIXTURE_SOURCE: security/fixtures/sonar
+          SONAR_FIXTURE_PROJECT: dx03v2-gate-fixture
+        run: bash scripts/test-sonar-gate.sh
+
+      - name: Stop disposable SonarQube and PostgreSQL
+        if: always()
+        run: bash scripts/sonar-service.sh stop
+
+      - name: Upload CodeQL results for review
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: dx03v2-codeql-sarif
+          path: ${{ runner.temp }}/codeql-results/*.sarif
+          retention-days: 7
+          if-no-files-found: ignore
+
   images:
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -107,7 +162,9 @@ jobs:
         with:
           context: .
           file: api/Dockerfile
-          build-args: GIT_SHA=${{ github.sha }}
+          build-args: |
+            GIT_SHA=${{ github.sha }}
+            SOURCE_REPOSITORY=${{ github.repository }}
           tags: dx03v2-api:e2e
           load: true
           cache-from: type=gha,scope=api
@@ -118,7 +175,9 @@ jobs:
         with:
           context: .
           file: web/Dockerfile
-          build-args: GIT_SHA=${{ github.sha }}
+          build-args: |
+            GIT_SHA=${{ github.sha }}
+            SOURCE_REPOSITORY=${{ github.repository }}
           tags: dx03v2-web:e2e
           load: true
           cache-from: type=gha,scope=web
@@ -129,14 +188,47 @@ jobs:
         env:
           IMAGES_PREBUILT: '1'
 
+      - name: Run OWASP ZAP Baseline against the disposable app
+        run: make dast
+        env:
+          ZAP_REPORT_DIR: ${{ runner.temp }}/dx03v2-zap-reports
+          ZAP_TARGET_PORT: '18080'
+          DAST_API_IMAGE: dx03v2-api:e2e
+          DAST_WEB_IMAGE: dx03v2-web:e2e
+
+      - name: Upload OWASP ZAP reports
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: dx03v2-zap-reports
+          path: ${{ runner.temp }}/dx03v2-zap-reports
+          retention-days: 7
+          if-no-files-found: ignore
+
       - name: Save both images as one artifact
-        run: docker save dx03v2-api:e2e dx03v2-web:e2e -o "$RUNNER_TEMP/dx03v2-images.tar"
+        run: |
+          set -euo pipefail
+          docker save dx03v2-api:e2e dx03v2-web:e2e -o "$RUNNER_TEMP/dx03v2-images.tar"
+          jq -n \
+            --arg source_sha "$GITHUB_SHA" \
+            --arg ci_run_id "$GITHUB_RUN_ID" \
+            --arg ci_run_attempt "$GITHUB_RUN_ATTEMPT" \
+            --arg image_tar_sha256 "$(sha256sum "$RUNNER_TEMP/dx03v2-images.tar" | awk '{print $1}')" \
+            --arg api_image_id "$(docker image inspect dx03v2-api:e2e --format '{{.Id}}')" \
+            --arg web_image_id "$(docker image inspect dx03v2-web:e2e --format '{{.Id}}')" \
+            '{schema_version: 1, source_sha: $source_sha, ci_run_id: $ci_run_id,
+              ci_run_attempt: ($ci_run_attempt | tonumber), image_tar_sha256: $image_tar_sha256,
+              images: {api: {tag: "dx03v2-api:e2e", image_id: $api_image_id},
+                       web: {tag: "dx03v2-web:e2e", image_id: $web_image_id}}}' \
+            >"$RUNNER_TEMP/dx03v2-image-manifest.json"
 
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: dx03v2-images
-          path: ${{ runner.temp }}/dx03v2-images.tar
-          retention-days: 3
+          path: |
+            ${{ runner.temp }}/dx03v2-images.tar
+            ${{ runner.temp }}/dx03v2-image-manifest.json
+          retention-days: 14
           if-no-files-found: error
 
   e2e:
@@ -190,6 +282,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          fetch-depth: 0
 
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
@@ -249,6 +342,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          fetch-depth: 0 # the release rollback drill needs the parent commit
 
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:

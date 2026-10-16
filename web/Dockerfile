@@ -20,9 +20,10 @@ RUN npm run build --workspace web
 # failed the trivy gate with a fixable HIGH in libtiff (CVE-2026-4775).
 FROM nginxinc/nginx-unprivileged:1.30-alpine-slim@sha256:3af0c10d960cc2502427fe1219c52989d309e7d65596869c60a34fd2fa2406f0 AS runtime
 ARG GIT_SHA=unknown
+ARG SOURCE_REPOSITORY=maringelix/dx03v2
 LABEL org.opencontainers.image.title="dx03v2-web" \
       org.opencontainers.image.description="dx03v2 message board single page served by nginx-unprivileged" \
-      org.opencontainers.image.source="https://github.com/maringelix/dx03v2" \
+      org.opencontainers.image.source="https://github.com/${SOURCE_REPOSITORY}" \
       org.opencontainers.image.revision="${GIT_SHA}" \
       org.opencontainers.image.licenses="MIT"
 ENV NGINX_ENTRYPOINT_QUIET_LOGS=1
