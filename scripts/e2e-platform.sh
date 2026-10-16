@@ -617,8 +617,9 @@ EOF
     [[ "$waiting" =~ ^[0-9]+$ ]] && ((waiting >= 1)) && break
     sleep 2
   done
-  [[ "$waiting" =~ ^[0-9]+$ ]] && ((waiting >= 1)) ||
+  if ! [[ "$waiting" =~ ^[0-9]+$ ]] || ((waiting < 1)); then
     die "rollback: the deliberately unavailable API image did not fail readiness"
+  fi
   available="$(kubectl -n "$NAMESPACE" get deployment api -o jsonpath='{.status.availableReplicas}')"
   available="${available:-0}"
   ((available >= 2)) || die "rollback: only $available ready API replicas remained during the failed rollout"
