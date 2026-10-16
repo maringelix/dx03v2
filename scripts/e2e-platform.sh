@@ -606,11 +606,18 @@ EOF
     -p "{\"spec\":{\"template\":{\"spec\":{\"containers\":[{\"name\":\"api\",\"image\":\"$bad_image\"}]}}}}" >/dev/null
   waiting=""
   for _ in $(seq 1 90); do
-    waiting="$(kubectl -n "$NAMESPACE" get pods -l app.kubernetes.io/name=api -o jsonpath='{range .items[*]}{range .status.containerStatuses[*]}{.state.waiting.reason}{\" \"}{end}{end}' 2>/dev/null)" || waiting=""
-    [[ "$waiting" == *ErrImagePull* || "$waiting" == *ImagePullBackOff* ]] && break
+    waiting="$(kubectl -n "$NAMESPACE" get pods -l app.kubernetes.io/name=api -o json |
+      jq -r --arg image "$bad_image" '
+        [.items[]
+         | select(any(.spec.containers[]?; .image == $image))
+         | .status.containerStatuses[]?
+         | select(.ready == false and (.state.waiting.reason == "ErrImagePull" or .state.waiting.reason == "ImagePullBackOff"))]
+        | length
+      ')" || waiting=""
+    [[ "$waiting" =~ ^[0-9]+$ ]] && ((waiting >= 1)) && break
     sleep 2
   done
-  [[ "$waiting" == *ErrImagePull* || "$waiting" == *ImagePullBackOff* ]] ||
+  [[ "$waiting" =~ ^[0-9]+$ ]] && ((waiting >= 1)) ||
     die "rollback: the deliberately unavailable API image did not fail readiness"
   available="$(kubectl -n "$NAMESPACE" get deployment api -o jsonpath='{.status.availableReplicas}')"
   available="${available:-0}"
