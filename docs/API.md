@@ -74,7 +74,8 @@ volta igual ou como UUID, um ID inseguro nunca volta e duas requisições nunca 
 - API: helmet com CSP `default-src 'none'; frame-ancestors 'none'`, `X-Content-Type-Options: nosniff`,
   `Cache-Control: no-store`, sem `X-Powered-By`, sem HSTS (decidido na borda), sem CORS.
 - Web (nginx): CSP `default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'`,
-  `X-Content-Type-Options`, `Referrer-Policy`, `Permissions-Policy`, `Cross-Origin-Opener-Policy` em
+  `X-Content-Type-Options`, `Referrer-Policy`, `Permissions-Policy`, `Cross-Origin-Opener-Policy`,
+  `Cross-Origin-Embedder-Policy: require-corp` e `Cross-Origin-Resource-Policy: same-origin` em
   toda resposta (inclusive assets e erros); HSTS só quando `X-Forwarded-Proto` é `https`.
 
 ## Configuração (variáveis de ambiente)

@@ -8,7 +8,15 @@ import globals from 'globals';
 import tseslint from 'typescript-eslint';
 
 export default defineConfig(
-  globalIgnores(['**/node_modules/', '**/dist/', '**/coverage/', '.tools/', '.cache/']),
+  globalIgnores([
+    '**/node_modules/',
+    '**/dist/',
+    '**/coverage/',
+    '.tools/',
+    '.cache/',
+    // This intentionally uncovered source is scanned only by the SonarQube negative-gate fixture.
+    'security/fixtures/sonar/uncovered.ts',
+  ]),
   js.configs.recommended,
   {
     files: ['**/*.{ts,tsx}'],

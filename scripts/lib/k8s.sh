@@ -31,8 +31,8 @@ K8S_GCP_NAME='[a-z]([-a-z0-9]{0,61}[a-z0-9])?'
 K8S_IPV4_OCTET='(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])'
 # shellcheck disable=SC2034 # read through a nameref in k8s_validate_params
 declare -A K8S_PARAM_PATTERN=(
-  [API_IMAGE]="^$K8S_GCP_REGION-docker\.pkg\.dev/$K8S_GCP_PROJECT/dx03v2/api:[0-9a-f]{40}\$"
-  [WEB_IMAGE]="^$K8S_GCP_REGION-docker\.pkg\.dev/$K8S_GCP_PROJECT/dx03v2/web:[0-9a-f]{40}\$"
+  [API_IMAGE]="^$K8S_GCP_REGION-docker\.pkg\.dev/$K8S_GCP_PROJECT/dx03v2/api(:[0-9a-f]{40}|@sha256:[0-9a-f]{64})\$"
+  [WEB_IMAGE]="^$K8S_GCP_REGION-docker\.pkg\.dev/$K8S_GCP_PROJECT/dx03v2/web(:[0-9a-f]{40}|@sha256:[0-9a-f]{64})\$"
   [GATEWAY_ADDRESS_NAME]="^$K8S_GCP_NAME\$"
   [WAF_SECURITY_POLICY]="^(none|$K8S_GCP_NAME)\$"
   # Fixed in the contract: the sources of the load balancer traffic and health checks, in this order.

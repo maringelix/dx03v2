@@ -7,8 +7,10 @@ Cloud Storage (por um emulador da API do S3), load balancer e servidor git emula
 (`docs/LAB_LOCAL.md` do tx03v2). Este repositório faz o deploy do app nela do jeito GitOps e prova o
 comportamento com sondas. Nada aqui fala com o Google Cloud.
 
-Status: `verificado no CI` (job `e2e-platform`, 18 sondas, tamanho padrão; job `e2e-platform-small`, as
-mesmas 18 sondas no tamanho `small` com o Docker limitado a 7 GB) e `verificado localmente` em
+Status: o job `e2e-platform` executa 19 sondas no tamanho padrão; este PR acrescenta o exercício de
+rollback R7.2 à suíte de 18 sondas já verificada. O job `e2e-platform-small` executa as mesmas 19
+sondas no tamanho `small` com o Docker limitado a 7 GB. CI deste PR confirma os dois tamanhos. A prova
+`verificado localmente` foi feita em
 2026-10-13 (as 13 sondas de então, rodada do zero na plataforma local do tx03v2, lab destruído sem
 sobras). As cinco sondas de 2026-10-14 (traces, rollout e chaos do banco) só rodaram no CI: a
 plataforma `full` com o app passa dos 7,65 GiB de memória do Docker Desktop usado aqui no tamanho
@@ -56,7 +58,7 @@ merge é o `e2e-platform` no tamanho padrão.
 | Plataforma `full` + app | Docker | Resultado |
 |---|---|---|
 | tamanho padrão | runner do CI, 16 GB | passa (job `e2e-platform`) |
-| tamanho `small` | 7 GB, sem swap (CI, 2026-10-15) | passa: as 18 sondas em cerca de 13 minutos, memória anônima de 4,40 GiB. Em uma das duas rodadas desta prova, o kernel matou duas vezes a cópia do plugin do Velero na instalação (init container BestEffort, que o kubelet roda de novo) |
+| tamanho `small` | 7 GB, sem swap (CI, 2026-10-15) | passa: as 18 sondas anteriores ao drill de rollback em cerca de 13 minutos, memória anônima de 4,40 GiB. Em uma das duas rodadas desta prova, o kernel matou duas vezes a cópia do plugin do Velero na instalação (init container BestEffort, que o kubelet roda de novo); CI deste PR repete o ensaio com 19 sondas |
 
 O par 01 mediu também o tamanho padrão em 7 GB (falha por thrashing) e o `small` em 6 GB (a sonda de
 rollout perde requisições) e em 8 GB (passa): `docs/LAB_LOCAL.md` do dx01v2. A meta da R1.8 era 6 GB;

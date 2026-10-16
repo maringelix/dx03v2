@@ -1,19 +1,22 @@
 #!/usr/bin/env bash
-# Publish a cloud deployment revision to the public GitOps branch. Only a source SHA and the
-# committed example parameters enter Git; live values are applied through the Argo CD Application.
+# Publish a cloud deployment revision to the public GitOps branch. Only the source SHA, approved
+# image digests, and committed example parameters enter Git; live values use the Argo CD Application.
 set -euo pipefail
 
 usage() {
-  echo "usage: $0 <gcp> <gcp|gcp-waf> <source-commit-sha>" >&2
+  echo "usage: $0 <gcp> <gcp|gcp-waf> <source-commit-sha> <api-sha256-digest> <web-sha256-digest>" >&2
   exit 2
 }
 
-(($# == 3)) || usage
+(($# == 5)) || usage
 cloud=$1
 overlay=$2
 revision=$3
+api_digest=$4
+web_digest=$5
 [[ "$cloud" == gcp ]] || usage
 [[ "$revision" =~ ^[0-9a-f]{40}$ ]] || usage
+[[ "$api_digest" =~ ^sha256:[0-9a-f]{64}$ && "$web_digest" =~ ^sha256:[0-9a-f]{64}$ ]] || usage
 case "$cloud:$overlay" in
   gcp:gcp|gcp:gcp-waf) ;;
   *) usage ;;
@@ -71,6 +74,8 @@ data:
   source-commit: "$revision"
   api-image-tag: "$revision"
   web-image-tag: "$revision"
+  api-image-digest: "$api_digest"
+  web-image-digest: "$web_digest"
 EOF
 
 git -C "$tmp/repo" add -f "$overlay_dir/gitops-revision.yaml" \

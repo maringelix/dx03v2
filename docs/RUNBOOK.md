@@ -119,26 +119,28 @@ RoleBinding `dx03v2-deployers` no namespace (`docs/CONTRATO.md`). Nada no Secret
 
 ## 7. Deploy
 
-No Actions, abra `deploy-gcp`, escolha a branch `main` e aprove o environment `lab`. O workflow usa
-GitOps e exige o perfil `full` do tx03v2, a Application `dx03v2` no Argo CD e permissão para publicar
-`gitops/gcp`. Se o cluster não usa Argo CD, execute o script de um laptop com `DEPLOY_MODE=push`.
+O deploy só aceita uma release que veio do CI de `main`; o workflow não reconstrói as imagens.
 
-O job valida as variáveis, instala `kubectl` e buildx, autentica por Workload Identity Federation,
-instala o gcloud e roda `scripts/deploy-gcp.sh`, que:
+1. No Actions, rode `publish-images` a partir de `main` e informe em `ci_run_id` o ID de uma execução
+   de CI bem-sucedida para o commit atual de `main`. O workflow verifica os cinco checks exigidos,
+   os image IDs, os SBOMs e as attestations antes de publicar os mesmos digests no GHCR.
+2. Rode `deploy-gcp` a partir de `main` e informe em `release_run_id` o ID dessa execução de
+   `publish-images`. O job `verify-release` confere novamente a execução de origem, os cinco checks,
+   os hashes dos SBOMs e as attestations antes do environment `lab`.
+3. Depois da aprovação de `lab`, o job valida as variáveis, baixa e verifica novamente o bundle,
+   autentica com Workload Identity Federation e instala `kubectl`, `crane` e gcloud.
+4. `scripts/deploy-gcp.sh` promove os digests assinados do GHCR para o Artifact Registry com `crane`,
+   sem rebuild. Confere que os digests e image IDs coincidem, grava os digests na revisão GitOps e
+   espera Argo CD, ExternalSecrets, rollouts, Gateway e smoke test.
 
-1. confere o checkout limpo e lê o parâmetro `tx03v2-lab-contract`, validando suas 15 chaves, valores fixos e formatos;
-2. obtém kubeconfig pelo endpoint DNS, confere API groups, GatewayClass, RBAC do namespace e, no modo GitOps, o direito de atualizar a Application `dx03v2`;
-3. autentica no Artifact Registry, reaproveita tags existentes e constrói/publica as imagens `linux/amd64` que faltam;
-4. cria o ConfigMap `cloudsql-ca` após verificar a raiz do contrato e renderiza/valida o overlay `gcp-waf` ou `gcp`. No workflow, configura os valores reais na Application, publica o commit do app com `params.env` de exemplo na branch `gitops/gcp` e pede refresh ao Argo CD. No uso local com `DEPLOY_MODE=push`, aplica o overlay com `kubectl apply -k`;
-5. no modo GitOps, espera a Application estar `Synced` e `Healthy` no commit publicado; depois espera ExternalSecrets e rollouts e confere as imagens SHA nos Deployments;
-6. espera o Gateway `Programmed` no endereço do contrato e registra as condições de HTTPRoute/políticas; roda `e2e/smoke.mjs` pelo load balancer. O Gateway só fala HTTP, então o token de admin não é lido nem enviado.
+O workflow exige o perfil `full` do tx03v2, a Application `dx03v2` no Argo CD e permissão para
+publicar `gitops/gcp`. A verificação da release não cria nem altera recursos cloud; apenas o job
+protegido `deploy` faz isso. A execução cloud da v2 continua marcada como `não executado em nuvem`.
 
-De um laptop, faça `gcloud auth login`, defina `GCP_PROJECT_ID` e configure a autenticação Git para publicar a branch:
-
-    make tools
-    GCP_PROJECT_ID=tx03v2-lab-example scripts/deploy-gcp.sh
-
-Sem Argo CD, use `DEPLOY_MODE=push GCP_PROJECT_ID=... scripts/deploy-gcp.sh`.
+O script também oferece `DEPLOY_MODE=push` para aplicar os manifests sem Argo CD. Esse caminho ainda
+exige uma release verificada (`RELEASE_DIR`, `RELEASE_RUN_ID`, `GH_TOKEN`, `GITHUB_REPOSITORY` e
+`GITHUB_ACTOR`) e credenciais cloud próprias; a execução é manual e faturável. Para o fluxo GitOps
+normal, use os dois workflows acima.
 
 ## 8. Conferir
 
@@ -180,7 +182,7 @@ cobrado enquanto não estiver preso a uma forwarding rule).
 | `cannot fetch the credentials of tx03v2-lab` | sem `roles/container.clusterViewer` ou cluster ausente | papéis da seção 6; confira o apply do tx03v2 |
 | `the cluster does not serve ...` | camada de plataforma do tx03v2 não instalada (ESO) ou Gateway API desligada | rode o workflow `platform` do tx03v2 |
 | `this identity cannot deploy to namespace dx03v2 (...)` | sem RoleBinding `dx03v2-deployers` para este e-mail, ou regra faltando na Role | confira a plataforma do tx03v2 e `app_deployer_members`; os plurais da Role são `healthcheckpolicies` e `gcpbackendpolicies` (`docs/CONTRATO.md`) |
-| `docker login to ... failed` / push recusado | sem `roles/artifactregistry.writer` no repositório `dx03v2` | papéis da seção 6 |
+| `crane auth login` falhou / promoção recusada | sem `roles/artifactregistry.writer` no repositório `dx03v2`, token GHCR sem `packages: read` ou release inválida | papéis da seção 6 e verificação do bundle |
 | `refusing https://storage.googleapis.com/cloudsql-ca-bundles/...` | o bundle tem outra raiz, duas raízes ou um certificado não emitido pela raiz do contrato | pare: confira a documentação de CAs do Cloud SQL; mudar a raiz é mudança de contrato |
 | ExternalSecret não fica `Ready` | ClusterSecretStore, identidade do ESO ou segredo ausente | `kubectl -n dx03v2 describe externalsecret db-credentials`; confira a plataforma do tx03v2 |
 | initContainer `migrate` falha com erro de TLS | ConfigMap `cloudsql-ca` ausente, ou `host` do segredo não é o nome DNS da instância | o script recria o ConfigMap; confira o `host` em `tx03v2-lab-db-app` e a zona DNS privada do tx03v2 |

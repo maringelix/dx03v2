@@ -7,7 +7,7 @@ HARNESS := bash scripts/harness.sh
 # The directory of this Makefile: `clean` removes things under it, wherever make was started from.
 ROOT := $(patsubst %/,%,$(dir $(abspath $(firstword $(MAKEFILE_LIST)))))
 
-.PHONY: help tools static test verify build e2e e2e-platform e2e-platform-small all clean
+.PHONY: help tools static test verify build e2e e2e-platform e2e-platform-small dast all clean
 
 help: ## Show the available targets
 	@awk 'BEGIN { FS = ":.*## " } /^[a-z][a-z0-9-]*:.*## / { printf "  %-8s %s\n", $$1, $$2 }' $(MAKEFILE_LIST)
@@ -36,7 +36,10 @@ e2e-platform: ## The app on the full tx03v2 local platform: deploy through Argo 
 e2e-platform-small: ## The same e2e on the small platform size inside Docker limited to 7 GB (heavy: CI only)
 	@$(HARNESS) platform-small
 
-all: ## Every stage: static + test + build + e2e
+dast: ## OWASP ZAP Baseline against the disposable Compose app (Docker + network; CI preferred)
+	@$(HARNESS) dast
+
+all: ## static + test + build + kind e2e (DAST and full platform e2e are separate)
 	@$(HARNESS) all
 
 clean: ## Remove installed tools, build output, coverage, node_modules and harness scratch data

@@ -37,8 +37,15 @@ for (const override of images) {
   }
   const sourceName = override.slice(0, separator);
   const targetImage = override.slice(separator + 1);
-  const tagSeparator = targetImage.lastIndexOf(':');
-  if (tagSeparator <= targetImage.lastIndexOf('/') || !/^[0-9a-f]{40}$/.test(targetImage.slice(tagSeparator + 1))) {
+  const immutableTag = targetImage.match(/^(.+):([0-9a-f]{40})$/);
+  const immutableDigest = targetImage.match(/^(.+)@sha256:([0-9a-f]{64})$/);
+  const expectedSuffix = sourceName.endsWith('/api') ? '/dx03v2/api' : sourceName.endsWith('/web') ? '/dx03v2/web' : '';
+  const targetName = immutableTag?.[1] ?? immutableDigest?.[1];
+  if (!expectedSuffix || !sourceName.endsWith(expectedSuffix) || !targetName?.endsWith(expectedSuffix)) {
+    fail('image override must use the dx03v2/api or dx03v2/web repository: ' + override);
+    continue;
+  }
+  if (!immutableTag && !immutableDigest) {
     fail(`image override must target an image tagged with the full source commit SHA: ${override}`);
     continue;
   }

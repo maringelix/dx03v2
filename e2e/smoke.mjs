@@ -40,6 +40,8 @@ const WEB_HEADERS = {
   'referrer-policy': 'strict-origin-when-cross-origin',
   'permissions-policy': 'camera=(), microphone=(), geolocation=()',
   'cross-origin-opener-policy': 'same-origin',
+  'cross-origin-embedder-policy': 'require-corp',
+  'cross-origin-resource-policy': 'same-origin',
 };
 
 const get = (path, headers = {}) => http(BASE_URL, path, { headers, retries: RETRIES });

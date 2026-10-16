@@ -1,7 +1,7 @@
 # Sustentação do dx03v2
 
 Como manter o repositório saudável sem conta na nuvem: rotinas, calendário de fim de suporte e
-procedimentos passo a passo. Datas e versões verificadas em 2026-10-11 e 2026-10-12.
+procedimentos passo a passo. O calendário e as versões são revistos nesta entrega em 2026-10-16.
 
 ## 1. Objetivo e escopo
 
@@ -13,12 +13,9 @@ plataforma) é do `tx03v2`, com a sustentação descrita lá.
 
 ## 2. Estado atual
 
-- Estágios `static`, `test`, `build` e `e2e` `verificado no CI` (jobs `static`, `test`, `images` e
-  `e2e`) e localmente em containers Linux (`HARNESS_STRICT=1`).
-- Deploy no Google Cloud: `não executado em nuvem (v2)`; `scripts/deploy-gcp.sh` foi exercitado só
-  com `gcloud`/`kubectl`/`docker` simulados (13 cenários, `docs/HARNESS.md`).
-- Contrato com o tx03v2: versão 2 de 2026-10-14, com o endpoint OTLP do Collector (`docs/CONTRATO.md`),
-  espelho da parte do app do `docs/CONTRATO.md` do tx03v2.
+- Estágios `static`, `test`, `build`, `e2e` e `platform` `verificado no CI` nos jobs `static`, `test`, `images`, `e2e` e `e2e-platform`; a suíte também passa localmente em containers Linux (`HARNESS_STRICT=1`).
+- Deploy no Google Cloud: `não executado em nuvem (v2)`. O harness confere o fluxo assinado; nenhuma release GHCR nem implantação cloud foi executada nesta rodada.
+- Contrato com o tx03v2: versão 3 de 2026-10-16, com a Application Argo CD e refresh restrito do R4; a versão 2 introduziu o endpoint OTLP do Collector (`docs/CONTRATO.md`).
 - App: o do `dx02v2` (que é o do `dx01v2` no commit `22e69c4`), com as diferenças da seção 5.11.
   O caso do `X-Forwarded-For` do load balancer do Google Cloud (`TRUST_PROXY_HOPS=2`) no teste de
   integração `rate-limit` começou aqui e já está no dx01v2 e no dx02v2.
@@ -72,6 +69,12 @@ git diff tools/                                      # versions.env + checksums.
 O script lê o arquivo de checksums publicado na release exata (shellcheck não publica: o script baixa
 os três artefatos e calcula o SHA256). Leia as release notes antes; para o trivy, achados novos podem
 aparecer só com a ferramenta nova.
+
+SonarScanner CLI 8.1.0.6389 e `crane` 0.22.1 são instalados pelos workflows fora de `make tools`;
+cada instalador confere o SHA-256 do asset oficial. Para atualizar o SonarScanner, revise a versão e
+o hash em `scripts/install-sonar-scanner.sh`, rode a análise e o teste negativo do Quality Gate. Para
+atualizar `crane`, revise os hashes por sistema/arquitetura em `scripts/install-crane.sh` e valide a
+cópia por digest no caminho de publicação. Não troque esses pins por tags sem checksum.
 
 ### 5.2 Dependências npm
 

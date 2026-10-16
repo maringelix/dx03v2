@@ -37,6 +37,7 @@ LAB_KUBECONFIG=""
 TX=""
 PASSED=0
 GIT_SHA=""
+PREVIOUS_SHA=""
 
 pass() {
   PASSED=$((PASSED + 1))
@@ -85,16 +86,29 @@ prepare_tx03v2() {
 }
 
 build_images() {
-  local c
+  local c previous_tree
+  PREVIOUS_SHA="$(git -C "$REPO_ROOT" rev-parse --verify "$GIT_SHA^")" ||
+    die "the platform release exercise needs the previous source commit"
   if [[ "${E2E_SKIP_BUILD:-0}" == 1 ]]; then
     for c in dx03v2-api:e2e dx03v2-web:e2e; do
       docker image inspect "$c" >/dev/null 2>&1 || die "E2E_SKIP_BUILD=1 but the image $c does not exist"
     done
-    return 0
+  else
+    for c in api web; do
+      log "building dx03v2-$c:e2e"
+      docker build -q -f "$REPO_ROOT/$c/Dockerfile" --build-arg GIT_SHA="$GIT_SHA" \
+        --build-arg SOURCE_REPOSITORY="${GITHUB_REPOSITORY:-maringelix/dx03v2}" \
+        -t "dx03v2-$c:e2e" "$REPO_ROOT" >/dev/null
+    done
   fi
+  previous_tree="$WORK_DIR/previous-source"
+  mkdir -p "$previous_tree"
+  git -C "$REPO_ROOT" archive "$PREVIOUS_SHA" | tar -x -C "$previous_tree"
   for c in api web; do
-    log "building dx03v2-$c:e2e"
-    docker build -q -f "$REPO_ROOT/$c/Dockerfile" --build-arg GIT_SHA="$GIT_SHA" -t "dx03v2-$c:e2e" "$REPO_ROOT" >/dev/null
+    log "building previous release dx03v2-$c:previous ($PREVIOUS_SHA)"
+    docker build -q -f "$previous_tree/$c/Dockerfile" --build-arg GIT_SHA="$PREVIOUS_SHA" \
+      --build-arg SOURCE_REPOSITORY="${GITHUB_REPOSITORY:-maringelix/dx03v2}" \
+      -t "dx03v2-$c:previous" "$previous_tree" >/dev/null
   done
 }
 
@@ -196,8 +210,7 @@ $(security_context)
           value: https://$HOST
         - name: SMOKE_WAIT_SECONDS
           value: "60"
-        # /api straight to the API (its own CSP, like the GKE Gateway) and an external X-Request-Id kept (the
-        # EnvoyFilter gateway-preserve-request-id of tx03v2, like nginx): e2e/smoke.mjs mode istio.
+        # /api routes straight to the API (its own CSP) and the Gateway preserves the request ID.
         - name: SMOKE_EDGE
           value: istio
         - name: NODE_EXTRA_CA_CERTS
@@ -291,7 +304,7 @@ check_observability() {
   [[ "$body" == *'"value":['*',"1"]'* ]] || die "observability: Prometheus has no healthy target of the dx03v2 API"
   pass "observability: Prometheus scrapes the API through the mesh (up == 1)"
   # The operator turns the PrometheusRule into a rule file and Prometheus reloads it on its own
-  # schedule (the CI of dx01v2 got here before the reload once).
+  # schedule (the CI got here before the reload once).
   local rules=(Dx03v2ApiDown Dx03v2HighErrorRate Dx03v2HighLatencyP95 Dx03v2PodRestarting Dx03v2PodNotReady) missing
   for _ in $(seq 1 20); do
     body="$(prom_query rules 'type=alert')"
@@ -304,7 +317,7 @@ check_observability() {
   done
   [[ -z "$missing" ]] || die "observability: alert rules not loaded by Prometheus:$missing"
   pass "observability: the five dx03v2 alert rules are loaded"
-  # The smoke traffic shows up after the next scrapes (the CI of dx01v2 got here before them once).
+  # The smoke traffic shows up after the next scrapes (the CI got here before them once).
   for _ in $(seq 1 20); do
     body="$(prom_query query 'query=sum(rate(http_request_duration_seconds_count{namespace="dx03v2",route="/api/messages"}[5m]))')"
     [[ "$body" == *'"result":[{'* ]] && break
@@ -471,9 +484,13 @@ check_db_backup() {
 # sync, RollingUpdate with maxUnavailable 0, readiness probes, preStop sleep and graceful shutdown)
 # loses no request: a reader that alternates API and web requests through the Gateway sees no error.
 check_zero_downtime() {
-  local ip name=rollout-reader new_sha phase="" out total fail
+  local ip name=rollout-reader phase="" out total fail info
   ip="$(gateway_ip)"
-  new_sha="$(hex 20)"
+  info="$(api GET /api/info)"
+  [[ "$info" == *"$PREVIOUS_SHA"* ]] || die "rollout: the starting API is not the previous release ($PREVIOUS_SHA)"
+  [[ "$(docker image inspect dx03v2-api:previous --format '{{.Id}}')" != \
+    "$(docker image inspect dx03v2-api:e2e --format '{{.Id}}')" ]] ||
+    die "rollout: old and new API images are not distinct content"
   kubectl -n dx03v2-probe apply -f - >/dev/null <<EOF
 apiVersion: v1
 kind: Pod
@@ -508,14 +525,17 @@ EOF
   kubectl -n dx03v2-probe wait --for=condition=Ready "pod/$name" --timeout=120s >/dev/null ||
     die "rollout: the reader pod did not start"
   sleep 5
-  GIT_SHA="$new_sha" DEPLOY_ALLOW_DIRTY=1 bash "$REPO_ROOT/scripts/deploy-local.sh" >"$WORK_DIR/rollout.log" 2>&1 || {
+  GIT_SHA="$GIT_SHA" DEPLOY_IMAGES="dx03v2-api:e2e dx03v2-web:e2e" DEPLOY_ALLOW_DIRTY=1 \
+    bash "$REPO_ROOT/scripts/deploy-local.sh" >"$WORK_DIR/rollout.log" 2>&1 || {
     cat "$WORK_DIR/rollout.log" >&2
     die "rollout: deploy-local of the new version failed"
   }
   for deploy in api web; do
-    [[ "$(kubectl -n "$NAMESPACE" get deployment "$deploy" -o jsonpath='{.spec.template.spec.containers[0].image}')" == *":$new_sha" ]] ||
-      die "rollout: the $deploy Deployment does not run the new tag $new_sha"
+    [[ "$(kubectl -n "$NAMESPACE" get deployment "$deploy" -o jsonpath='{.spec.template.spec.containers[0].image}')" == *":$GIT_SHA" ]] ||
+      die "rollout: the $deploy Deployment does not run the new tag $GIT_SHA"
   done
+  info="$(api GET /api/info)"
+  [[ "$info" == *"$GIT_SHA"* ]] || die "rollout: the new API content does not report source commit $GIT_SHA"
   # A few more seconds of traffic once the old pods are gone.
   sleep 10
   phase="$(kubectl -n dx03v2-probe get pod "$name" -o jsonpath='{.status.phase}')"
@@ -527,7 +547,104 @@ EOF
   ((total >= 100)) || die "rollout: the reader made only $total requests"
   ((fail == 0)) ||
     die "rollout: hypothesis refuted, $fail of $total requests failed during the rollout: $(grep '^fail' <<<"$out" | sort | uniq -c | tr '\n' ' ')"
-  pass "rollout: a new version deployed the GitOps way (api and web rolled) lost 0 of $total requests through the Gateway (zero downtime)"
+  pass "rollout: API/Web content moved from $PREVIOUS_SHA to $GIT_SHA via GitOps with 0 of $total requests lost"
+}
+
+# A not-ready candidate must leave the last ready version available; publishing the previous image
+# to the GitOps branch rolls the application back without changing database contents.
+check_failed_rollout_and_rollback() {
+  local current_info previous_info bad_image waiting available ip name=rollback-reader out fail marker body
+  current_info="$(api GET /api/info)"
+  [[ "$current_info" == *"$GIT_SHA"* ]] || die "rollback: the current release is not serving before the failure exercise"
+  marker="rollback-keeps-data-$RANDOM"
+  body="$(api POST /api/messages "{\"author\":\"rollback-drill\",\"text\":\"$marker\"}")"
+  [[ "$body" == *"$marker"* ]] || die "rollback: could not create the data-preservation marker"
+  ip="$(gateway_ip)"
+  kubectl -n dx03v2-probe apply -f - >/dev/null <<EOF
+apiVersion: v1
+kind: Pod
+metadata:
+  name: $name
+spec:
+  restartPolicy: Never
+  automountServiceAccountToken: false
+$(security_context)
+  containers:
+    - name: curl
+      image: $CURL_IMAGE
+      command: ["sh", "-c"]
+      args:
+        - |
+          for i in \$(seq 1 1800); do
+            response=\$(curl -sS --cacert /lab-ca/ca.crt -m 3 -w '\\n%{http_code}' --resolve "$HOST:443:$ip" "https://$HOST/api/info")
+            code=\$(printf '%s\\n' "\$response" | tail -n 1)
+            body=\$(printf '%s\\n' "\$response" | sed '\$d')
+            if [ "\$code" = 200 ]; then
+              if printf '%s' "\$body" | grep -qF "$PREVIOUS_SHA"; then echo rollback-seen; break; fi
+              echo ok
+            else
+              echo "fail \$code"
+            fi
+            sleep 0.5
+          done
+      volumeMounts:
+        - name: lab-ca
+          mountPath: /lab-ca
+$(container_security)
+  volumes:
+    - name: lab-ca
+      configMap:
+        name: lab-ca
+EOF
+  kubectl -n dx03v2-probe wait --for=condition=Ready "pod/$name" --timeout=120s >/dev/null ||
+    die "rollback: the availability reader did not start"
+  kubectl -n argocd patch application dx03v2 --type=json \
+    -p='[{"op":"remove","path":"/spec/syncPolicy/automated"}]' >/dev/null ||
+    die "rollback: could not pause automated sync for the failure injection"
+  bad_image="$(kubectl -n lab-system get configmap lab-contract -o jsonpath='{.data.registry}')/dx03v2/api:missing-$RANDOM"
+  kubectl -n "$NAMESPACE" patch deployment api --type=strategic \
+    -p "{\"spec\":{\"template\":{\"spec\":{\"containers\":[{\"name\":\"api\",\"image\":\"$bad_image\"}]}}}}" >/dev/null
+  waiting=""
+  for _ in $(seq 1 90); do
+    waiting="$(kubectl -n "$NAMESPACE" get pods -l app.kubernetes.io/name=api -o json |
+      jq -r --arg image "$bad_image" '
+        [.items[]
+         | select(any(.spec.containers[]?; .image == $image))
+         | .status.containerStatuses[]?
+         | select(.ready == false and (.state.waiting.reason == "ErrImagePull" or .state.waiting.reason == "ImagePullBackOff"))]
+        | length
+      ')" || waiting=""
+    [[ "$waiting" =~ ^[0-9]+$ ]] && ((waiting >= 1)) && break
+    sleep 2
+  done
+  if ! [[ "$waiting" =~ ^[0-9]+$ ]] || ((waiting < 1)); then
+    die "rollback: the deliberately unavailable API image did not fail readiness"
+  fi
+  available="$(kubectl -n "$NAMESPACE" get deployment api -o jsonpath='{.status.availableReplicas}')"
+  available="${available:-0}"
+  ((available >= 2)) || die "rollback: only $available ready API replicas remained during the failed rollout"
+  [[ "$(api GET /api/info)" == *"$GIT_SHA"* ]] ||
+    die "rollback: the last ready API version stopped serving during the failed rollout"
+
+  GIT_SHA="$PREVIOUS_SHA" DEPLOY_IMAGES="dx03v2-api:previous dx03v2-web:previous" DEPLOY_ALLOW_DIRTY=1 \
+    bash "$REPO_ROOT/scripts/deploy-local.sh" >"$WORK_DIR/rollback.log" 2>&1 || {
+      cat "$WORK_DIR/rollback.log" >&2
+      die "rollback: GitOps promotion of the previous release failed"
+    }
+  previous_info="$(api GET /api/info)"
+  [[ "$previous_info" == *"$PREVIOUS_SHA"* ]] ||
+    die "rollback: the previous API content was not restored after the failed rollout"
+  [[ "$(api GET /api/messages?limit=100)" == *"$marker"* ]] ||
+    die "rollback: application rollback lost the message written before the failed release"
+  [[ "$(docker exec tx03v2-local-db psql -At -U dx03v2 -d dx03v2 -c "SELECT 1 FROM information_schema.columns WHERE table_name='messages' AND column_name='display_name'")" == 1 ]] ||
+    die "rollback: the additive database migration was incorrectly rolled back with the application"
+  out="$(kubectl -n dx03v2-probe logs "$name")"
+  kubectl -n dx03v2-probe delete pod "$name" --wait=false >/dev/null 2>&1 || :
+  fail="$(grep -c '^fail' <<<"$out" || :)"
+  grep -q '^rollback-seen$' <<<"$out" ||
+    die "rollback: the availability reader did not observe the previous version serving again"
+  ((fail == 0)) || die "rollback: the reader saw $fail failed requests while a not-ready image was rejected and GitOps restored the previous release"
+  pass "rollback: unready API candidate rejected; two previous replicas stayed ready; GitOps restored the previous image $PREVIOUS_SHA with no failed probe requests"
 }
 
 check_self_heal() {
@@ -664,18 +781,28 @@ main() {
   lab up
   LAB_KUBECONFIG="$(lab kubeconfig | tail -n 1)"
   export KUBECONFIG="$LAB_KUBECONFIG"
-  GIT_SHA="$GIT_SHA" DEPLOY_ALLOW_DIRTY=1 bash "$REPO_ROOT/scripts/deploy-local.sh"
-  pass "gitops: deploy-local pushed the images and the manifests; Argo CD synced dx03v2 (Synced, Healthy)"
+  GIT_SHA="$PREVIOUS_SHA" DEPLOY_IMAGES="dx03v2-api:previous dx03v2-web:previous" DEPLOY_ALLOW_DIRTY=1 \
+    bash "$REPO_ROOT/scripts/deploy-local.sh"
+  pass "gitops: deployed previous content $PREVIOUS_SHA from distinct image artifacts"
   probe_namespace
-  # The drill writes twice; the smoke test then uses up the write budget of the shared client address.
   check_db_backup
-  check_smoke
   check_mesh
   check_observability
   check_tracing
   check_trivy
   check_hpa
   check_zero_downtime
+  check_failed_rollout_and_rollback
+  # The rollback drill proves that the previous release is restored. Re-promote the tested image
+  # before the smoke test so its security-header checks run against this branch's content.
+  GIT_SHA="$GIT_SHA" DEPLOY_IMAGES="dx03v2-api:e2e dx03v2-web:e2e" DEPLOY_ALLOW_DIRTY=1 \
+    bash "$REPO_ROOT/scripts/deploy-local.sh" >"$WORK_DIR/post-rollback-smoke.log" 2>&1 || {
+    cat "$WORK_DIR/post-rollback-smoke.log" >&2
+    die "rollback: could not re-promote the tested release for smoke validation"
+  }
+  [[ "$(api GET /api/info)" == *"$GIT_SHA"* ]] || die "rollback: the tested release was not restored for smoke validation"
+  # Keep the write-rate-limit exercise last: the smoke test consumes this client's write budget.
+  check_smoke
   check_self_heal
   check_chaos
   check_chaos_db_latency
