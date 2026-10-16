@@ -1061,6 +1061,12 @@ check_test_api() {
   DB_HOST=127.0.0.1 DB_PORT="$port" DB_NAME=dx03v2_test DB_USER=dx03v2 DB_PASSWORD="$password" run_vitest api
 }
 
+check_dast_zap() {
+  need_docker
+  bash scripts/dast-zap.sh
+  bash scripts/test-zap-gate.sh
+}
+
 check_test_web() {
   need node npx
   [[ -d node_modules ]] || skip "node_modules is missing (check npm-ci)"
