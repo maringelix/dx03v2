@@ -55,6 +55,13 @@ conter (o check `contract-app` recusa qualquer outro tipo, e o deploy confere ca
 GatewayClasses têm escopo de cluster e ficam fora da Role: o deploy confere a classe quando consegue
 lê-la; senão, a condição `Programmed` do Gateway é a prova.
 
+Com o perfil `full` do `tx03v2`, o Argo CD é o dono dos manifests do app. O deploy configura o caminho,
+as imagens e os valores reais em `spec.source.kustomize` da Application `dx03v2` no namespace `argocd`;
+em seguida, publica o commit do app e `params.env` copiado do exemplo na branch `gitops/gcp` e pede
+refresh ao Argo CD. O app pai ignora somente `spec.source.path` e `spec.source.kustomize` dessa
+Application e usa `RespectIgnoreDifferences=true`. Para um cluster sem Argo CD, selecione `push` e o
+script aplica diretamente o overlay. A branch pública não recebe IDs reais da conta ou do projeto.
+
 ## Workload Identity Federation do GitHub
 
 Pool `tx03v2-github`, provider `github` (issuer `https://token.actions.githubusercontent.com`,

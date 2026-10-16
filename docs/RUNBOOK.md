@@ -119,48 +119,27 @@ RoleBinding `dx03v2-deployers` no namespace (`docs/CONTRATO.md`). Nada no Secret
 
 ## 7. Deploy
 
-Actions > `deploy-gcp` > Run workflow (branch `main`) e aprove o environment `lab`. O job confere
-as variáveis, instala o kubectl fixado e o buildx, faz a autenticação por Workload Identity
-Federation (`google-github-actions/auth` v3.0.0), instala o gcloud 588.0.0 com o
-`gke-gcloud-auth-plugin` (`setup-gcloud` v3.0.1) e roda `scripts/deploy-gcp.sh`, que:
+No Actions, abra `deploy-gcp`, escolha a branch `main`, selecione `mode=gitops` (padrão) e aprove o
+environment `lab`. O modo GitOps exige o perfil `full` do tx03v2, a Application `dx03v2` no Argo CD
+e permissão para publicar `gitops/gcp`. Use `mode=push` somente se o Argo CD não estiver gerenciando
+o app.
 
-1. confere o working tree limpo, que `GIT_SHA` é o commit do checkout e que o gcloud tem uma
-   credencial ativa;
-2. renderiza o parâmetro `tx03v2-lab-contract` (`gcloud parametermanager parameters versions render
-   latest`), recusa qualquer conjunto de chaves diferente das 15 do contrato e confere os valores
-   fixos, os formatos, o projeto, o caminho do repositório e que `db/endpoint-ip` está dentro de
-   `nodes-subnet-cidr`, antes de mudar qualquer coisa;
-3. gera um kubeconfig temporário pelo endpoint DNS (`gcloud container clusters get-credentials
-   --dns-endpoint`), confere que o cluster serve `gateway.networking.k8s.io/v1`,
-   `networking.gke.io/v1` e `external-secrets.io/v1`, a GatewayClass `gke-l7-global-external-managed`
-   quando consegue lê-la, e que a identidade pode escrever cada tipo do overlay no namespace `dx03v2`
-   (`kubectl auth can-i`);
-4. autentica o Docker no Artifact Registry (token pelo stdin) e lista as tags: uma tag que já existe é
-   reaproveitada, nunca publicada de novo;
-5. constrói as imagens `linux/amd64` que faltam e publica `dx03v2/api:<sha>` e `dx03v2/web:<sha>`
-   (`docker buildx build --push`);
-6. cria o ConfigMap `cloudsql-ca` com o bundle da região, depois de conferir a raiz do contrato
-   (SHA-256) e que todo outro certificado é uma CA emitida por ela;
-7. renderiza o overlay `gcp-waf` (ou `gcp`, quando `waf/security-policy` é `none`; nesse caso apaga
-   as GCPBackendPolicies antigas) com os valores do contrato e aplica com `kubectl apply -k`;
-8. espera os ExternalSecrets `db-credentials` e `app-secrets`, os rollouts e o Gateway `Programmed`
-   no endereço `gateway/address`, e registra as condições da HTTPRoute e das políticas;
-9. roda `e2e/smoke.mjs` pelo load balancer com `SMOKE_EDGE=gke` (até 15 minutos de espera,
-   `SMOKE_WAIT_SECONDS`) e escreve o resumo do job. O Gateway do lab só fala HTTP (HTTPS nas nuvens
-   está fora do escopo da v2): o token de admin não é lido nem enviado, e o smoke test pula a chamada
-   `DELETE` com o token (`SKIP` no resumo); as chamadas com token errado rodam. O login do Artifact
-   Registry fica num diretório de configuração do Docker temporário (`DOCKER_CONFIG`): o seu
-   `~/.docker/config.json` não é tocado.
+O job valida as variáveis, instala `kubectl` e buildx, autentica por Workload Identity Federation,
+instala o gcloud e roda `scripts/deploy-gcp.sh`, que:
 
-A partir de um laptop (working tree limpo e no commit que você quer publicar, porque a tag é o SHA):
+1. confere o checkout limpo e lê o parâmetro `tx03v2-lab-contract`, validando suas 15 chaves, valores fixos e formatos;
+2. obtém kubeconfig pelo endpoint DNS, confere API groups, GatewayClass, RBAC do namespace e, no modo GitOps, o direito de atualizar a Application `dx03v2`;
+3. autentica no Artifact Registry, reaproveita tags existentes e constrói/publica as imagens `linux/amd64` que faltam;
+4. cria o ConfigMap `cloudsql-ca` após verificar a raiz do contrato e renderiza/valida o overlay `gcp-waf` ou `gcp`. Em `mode=gitops`, configura os valores reais na Application, publica o commit do app com `params.env` de exemplo na branch `gitops/gcp` e pede refresh ao Argo CD. Em `mode=push`, aplica o overlay com `kubectl apply -k`;
+5. no modo GitOps, espera a Application estar `Synced` e `Healthy` no commit publicado; depois espera ExternalSecrets e rollouts e confere as imagens SHA nos Deployments;
+6. espera o Gateway `Programmed` no endereço do contrato e registra as condições de HTTPRoute/políticas; roda `e2e/smoke.mjs` pelo load balancer. O Gateway só fala HTTP, então o token de admin não é lido nem enviado.
 
-```bash
-make tools                                   # kubectl fixado
-gcloud auth login
-GCP_PROJECT_ID=tx03v2-lab-example scripts/deploy-gcp.sh   # o ID real do seu projeto
-```
+De um laptop, faça `gcloud auth login`, defina `GCP_PROJECT_ID` e configure a autenticação Git para publicar a branch:
 
-Em Apple Silicon o build `linux/amd64` roda emulado (mais lento): os nós do Autopilot são x86-64.
+    make tools
+    GCP_PROJECT_ID=tx03v2-lab-example scripts/deploy-gcp.sh
+
+Sem Argo CD, use `DEPLOY_MODE=push GCP_PROJECT_ID=... scripts/deploy-gcp.sh`.
 
 ## 8. Conferir
 

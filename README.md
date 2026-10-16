@@ -48,7 +48,7 @@ The lab family (v2):
 | Images: build, numeric non-root user, no npm or shell in the API runtime, trivy HIGH/CRITICAL gate | `verified in CI` | `make build`; CI job `images` |
 | Compose stack (PostgreSQL → migrate → api → web on 127.0.0.1) + smoke test | `verified locally` | `scripts/dev-env.sh`, `scripts/compose-smoke.sh` (manual, not part of CI) |
 | kind end-to-end: Pod Security `restricted`, smoke test through nginx, NetworkPolicy enforcement | `verified in CI` | `make e2e` (`scripts/e2e-kind.sh`); CI job `e2e` |
-| Google Cloud deploy (Artifact Registry push, GKE Autopilot of tx03v2, ExternalSecrets from Secret Manager, GKE Gateway + Cloud Armor, traces to the OpenTelemetry Collector of tx03v2 and Cloud Trace, smoke test through the load balancer) | `not run in the cloud (v2)` | `.github/workflows/deploy-gcp.yml`, `scripts/deploy-gcp.sh`, `docs/RUNBOOK.md` |
+| Google Cloud deploy (Artifact Registry, GKE Autopilot of tx03v2, ExternalSecrets, GKE Gateway + Cloud Armor, traces to the OpenTelemetry Collector and Cloud Trace, smoke test; Argo CD GitOps by default, direct push as an alternative) | `not run in the cloud (v2)` | `.github/workflows/deploy-gcp.yml`, `scripts/deploy-gcp.sh`, `docs/RUNBOOK.md` |
 | HTTPS on the Gateway listener | `planned` | needs a certificate; outside contract v2 (`docs/CONTRATO.md`) |
 | Overlay `local-platform` for the tx03v2 local lab: kustomize render + kubeconform strict, assertions against the local contract and the kinds of the AppProject `dx03v2`, five alert rules tested with promtool | `verified in CI` | `make static` (`kubeconform`, `contract-app`, `promtool-rules`) in a Linux container; CI job `static` |
 | **The app on the full local platform of tx03v2** (kind + emulated Artifact Registry, Cloud SQL, object storage, load balancer, git server): images to the lab registry, GitOps with Argo CD (Synced, Healthy, self-heal) | `verified in CI` | `make e2e-platform` (`scripts/deploy-local.sh`, `scripts/e2e-platform.sh`, `docs/LAB_LOCAL.md`); CI job `e2e-platform` |
@@ -86,7 +86,9 @@ flowchart LR
   `X-Forwarded-For` and connects from a Google Front End, so the API trusts two hops
   (`TRUST_PROXY_HOPS=2`). Secrets come from Secret Manager through External Secrets; the database is
   Cloud SQL through a Private Service Connect endpoint. The namespace, RBAC, the reserved address,
-  Cloud Armor, Cloud SQL and the platform layer belong to tx03v2.
+  Cloud Armor, Cloud SQL and the platform layer belong to tx03v2. The deploy workflow publishes the
+  source revision to `gitops/gcp` for Argo CD; direct push remains available for clusters without
+  Argo CD.
 - Design decisions, diagrams per environment, the AWS / Azure / Google Cloud table and the v1 → v2
   table: [docs/ARQUITETURA.md](docs/ARQUITETURA.md).
 
@@ -128,8 +130,8 @@ use another currency: see the [tx03v2 cost doc](https://github.com/maringelix/tx
 Use a dedicated project with a budget and destroy on the same day.
 
 Follow [docs/RUNBOOK.md](docs/RUNBOOK.md): tx03v2 bootstrap/apply/platform → GitHub variables of
-dx03v2 → `deploy-gcp` workflow (or `scripts/deploy-gcp.sh` after `gcloud auth login`) → smoke test
-through the load balancer → tx03v2 destroy + leftover check → `cloud_run_report` issue.
+dx03v2 → `deploy-gcp` workflow (GitOps with Argo CD by default, or direct push) → smoke test through
+the load balancer → tx03v2 destroy + leftover check → `cloud_run_report` issue.
 
 ## Harness
 
