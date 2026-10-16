@@ -50,8 +50,10 @@ const api = image(required(actual, 'API_IMAGE'), 'API_IMAGE');
 const web = image(required(actual, 'WEB_IMAGE'), 'WEB_IMAGE');
 const apiExample = image(required(example, 'API_IMAGE'), 'example API_IMAGE');
 const webExample = image(required(example, 'WEB_IMAGE'), 'example WEB_IMAGE');
-if (![api.name, apiExample.name].every((name) => name.endsWith('/dx03v2/api')) ||
-    ![web.name, webExample.name].every((name) => name.endsWith('/dx03v2/web'))) {
+if (
+  ![api.name, apiExample.name].every((name) => name.endsWith('/dx03v2/api')) ||
+  ![web.name, webExample.name].every((name) => name.endsWith('/dx03v2/web'))
+) {
   fail('runtime and example images must use the dx03v2/api and dx03v2/web repositories');
 }
 const ranges = required(actual, 'LB_SOURCE_RANGES').split(',');

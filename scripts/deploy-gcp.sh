@@ -367,9 +367,15 @@ prepare_registry_auth() {
 # promote_image COMPONENT SOURCE_NAME SOURCE_DIGEST IMAGE_ID -> exact Artifact Registry digest.
 promote_image() {
   local component="$1" source_name="$2" source_digest="$3" expected_id="$4"
-  local source_ref="$source_name@$source_digest" target_name="$(param artifact-registry/repository)/$component"
-  local image_tag="$target_name:$GIT_SHA" packages="" tags="" target_digest="" source_id="" target_id=""
+  local source_ref target_name image_tag packages="" tags="" target_digest="" source_id="" source_platform="" target_id=""
+  source_ref="$source_name@$source_digest"
+  target_name="$(param artifact-registry/repository)/$component"
+  image_tag="$target_name:$GIT_SHA"
   [[ "$source_digest" =~ ^sha256:[0-9a-f]{64}$ ]] || die "$component release digest is invalid"
+  source_platform="$(crane config "$source_ref" | jq -er '"\(.os)/\(.architecture)"')" ||
+    die "cannot read the platform for the verified $component release"
+  [[ "$source_platform" == "$IMAGE_PLATFORM" ]] ||
+    die "$component release platform must be $IMAGE_PLATFORM (got $source_platform)"
   source_id="$(crane manifest "$source_ref" | jq -er '.config.digest')" ||
     die "cannot read the image configuration digest for the verified $component release"
   [[ "$source_id" == "$expected_id" ]] ||

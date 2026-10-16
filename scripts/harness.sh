@@ -563,7 +563,13 @@ check_policy_workflows() {
     echo "$wf: contents: write must appear once, in the deploy job that publishes the GitOps branch"
     rc=1
   }
-  [[ "$(awk '/^    permissions:/ { p = 1; next } p && /^      [a-z-]+:/ { sub(/^      /, ""); print; next } p { exit }' "$wf" | sort | tr '\n' ' ')" == 'actions: read attestations: read contents: write id-token: write packages: read ' ]] || {
+  [[ "$(awk '
+    /^  deploy:[[:space:]]*$/ { in_deploy = 1; next }
+    in_deploy && /^  [A-Za-z0-9_-]+:[[:space:]]*$/ { in_deploy = 0 }
+    in_deploy && /^    permissions:[[:space:]]*$/ { in_permissions = 1; next }
+    in_permissions && /^      [a-z-]+:/ { sub(/^      /, ""); print; next }
+    in_permissions { exit }
+  ' "$wf" | sort | tr '\n' ' ')" == 'actions: read attestations: read contents: write id-token: write packages: read ' ]] || {
     echo "$wf: the deploy job permissions must be limited to actions/attestations/package reads, GitOps writes and OIDC"
     rc=1
   }
@@ -627,7 +633,8 @@ check_policy_images() {
     rc=1
   }
   out="$(grep -rnhE '^[[:space:]-]*image:[[:space:]]' compose.yaml deploy/k8s .github/workflows kind |
-    grep -vE '@sha256:[0-9a-f]{64}' | grep -vE 'image:[[:space:]]+dx03v2-(api|web)(:local)?[[:space:]]*$')" || true
+    grep -vE '@sha256:[0-9a-f]{64}' |
+    grep -vE 'image:[[:space:]]+(dx03v2-(api|web)(:local)?|\$\{(API_IMAGE:-dx03v2-api|WEB_IMAGE:-dx03v2-web):local\})[[:space:]]*$')" || true
   [[ -z "$out" ]] || {
     printf 'images must be pinned by digest (only dx03v2-api/dx03v2-web are built here):\n%s\n' "$out"
     rc=1
@@ -1295,6 +1302,7 @@ list_checks() {
   echo "  static  policies, npm ci, eslint, prettier, tsc, hadolint, actionlint, shellcheck, CRD schemas, kubeconform, contract, promtool rules, trivy config, gitleaks"
   echo "  test    API unit + integration tests (real PostgreSQL 17) and web tests, with coverage gates"
   echo "  build   npm build, docker images, image policy, trivy image gate (HIGH/CRITICAL, fixable)"
+  echo "  dast    OWASP ZAP Baseline against the disposable Compose app"
   echo "  e2e     kind cluster: manifests, PSA restricted, smoke test, NetworkPolicy enforcement"
   echo "  platform the app on the full tx03v2 local platform (GitOps, mesh, observability, policies, backup, chaos)"
   echo "  platform-small the same e2e on the small platform size, inside Docker limited to 7 GB (heavy: CI only)"
@@ -1318,7 +1326,7 @@ main() {
   register_checks
   for arg in "$@"; do
     case "$arg" in
-      static | test | build | e2e | platform | platform-small) stages+=("$arg") ;;
+      static | test | build | dast | e2e | platform | platform-small) stages+=("$arg") ;;
       all) stages+=(static test build e2e) ;;
       list)
         list_checks

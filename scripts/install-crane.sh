@@ -11,15 +11,15 @@ os="$(uname -s)"
 arch="$(uname -m)"
 case "$os/$arch" in
   Linux/x86_64)
-    asset="go-containerregistry_"$VERSION"_Linux_x86_64.tar.gz"
+      asset="go-containerregistry_${VERSION}_Linux_x86_64.tar.gz"
     checksum=0ab7a1d6932a213aed964ce97666c3077fe691c8606413674a8b3e0b9ec4cda0
     ;;
   Linux/aarch64 | Linux/arm64)
-    asset="go-containerregistry_"$VERSION"_Linux_arm64.tar.gz"
+      asset="go-containerregistry_${VERSION}_Linux_arm64.tar.gz"
     checksum=898c0cff975f898a33e8c4580bdafb0e7c02c7faa33374e946762f97c4ab7110
     ;;
   Darwin/arm64)
-    asset="go-containerregistry_"$VERSION"_Darwin_arm64.tar.gz"
+      asset="go-containerregistry_${VERSION}_Darwin_arm64.tar.gz"
     checksum=2231fc8df8806d20d680ff1225db44e095a55dd6ac1ae8eced4faf4b278b78fb
     ;;
   *)
