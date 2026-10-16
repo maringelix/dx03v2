@@ -2,6 +2,7 @@
 # Verify a published release bundle, its source CI run, and identity-locked image attestations.
 set -euo pipefail
 
+# shellcheck source=scripts/lib/common.sh
 source "$(dirname "${BASH_SOURCE[0]}")/lib/common.sh"
 
 for name in RELEASE_DIR RELEASE_RUN_ID GITHUB_REPOSITORY GH_TOKEN; do

@@ -2,6 +2,7 @@
 # Resolve a successful publish-images run to the immutable artifact name it produced.
 set -euo pipefail
 
+# shellcheck source=scripts/lib/common.sh
 source "$(dirname "${BASH_SOURCE[0]}")/lib/common.sh"
 
 for name in RELEASE_RUN_ID GITHUB_REPOSITORY GITHUB_OUTPUT GH_TOKEN; do

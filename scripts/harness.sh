@@ -1227,6 +1227,7 @@ register_checks() {  register static tool-versions check_tool_versions
   register test npm-ci check_npm_ci
   register test test:api check_test_api
   register test test:web check_test_web
+  register dast zap-baseline check_dast_zap
   register build npm-ci check_npm_ci
   register build npm-build check_npm_build
   register build image:api "check_image api"
@@ -1314,7 +1315,7 @@ list_checks() {
 }
 
 usage() {
-  echo "usage: $0 <stage>...   (stages: static, test, build, e2e, platform, platform-small, all, list)" >&2
+  echo "usage: $0 <stage>...   (stages: static, test, build, dast, e2e, platform, platform-small, all, list)" >&2
   exit 2
 }
 
