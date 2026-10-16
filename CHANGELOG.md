@@ -10,6 +10,8 @@ All notable changes to this project are documented here. The format follows
 - Cloud deploy now publishes the app source revision to `gitops/gcp` with example parameters, then
   waits for Argo CD to report that exact revision `Synced` and `Healthy`. Direct push remains
   available when Argo CD is not managing the app.
+- Contract version 3 with tx03v2 records the R4 GitOps Application and restricted refresh permission,
+  coordinated with [tx03v2#14](https://github.com/maringelix/tx03v2/pull/14).
 
 
 ### Security

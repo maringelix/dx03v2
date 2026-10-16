@@ -24,7 +24,7 @@ is the source of truth. The full rule list (pt-BR) is [docs/GUARDRAILS.md](docs/
   `e2e-platform`, [docs/LAB_LOCAL.md](docs/LAB_LOCAL.md)); the platform e2e is `verified in CI` (18
   probes). It is not cloud-mutating: agents may run it, one heavy run at a time (Docker with 8 GB, or 7 GB with
   `LOCAL_SIZE=small`; `make e2e-platform-small` is meant for the CI runner).
-- The interface with `tx03v2` is [docs/CONTRATO.md](docs/CONTRATO.md) (contract v2, owned by tx03v2; the
+- The interface with `tx03v2` is [docs/CONTRATO.md](docs/CONTRATO.md) (contract v3, owned by tx03v2; the
   local lab has its own local contract, `lab-system/lab-contract`).
 
 ## 2. Non-negotiable rules
