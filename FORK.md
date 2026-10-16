@@ -76,9 +76,9 @@ Only after tx03v2 is applied in your project
 ([its FORK.md](https://github.com/maringelix/tx03v2/blob/main/FORK.md), step 7). Its bootstrap prints
 the repository variables of this fork (`github_variables_dx03v2`: `GCP_PROJECT_ID`,
 `GCP_WORKLOAD_IDENTITY_PROVIDER` and `GCP_DEPLOY_SERVICE_ACCOUNT`); then run `deploy-gcp` from the
-Actions tab and approve the `lab` environment. The workflow builds and pushes the images, applies the
-manifests and runs the smoke test through the GKE Gateway: [docs/RUNBOOK.md](docs/RUNBOOK.md),
-sections 5 to 9. Destroy the lab from tx03v2 on the same day.
+Actions tab and approve the `lab` environment. The workflow builds and pushes the images, publishes
+the GitOps revision, waits for Argo CD and runs the smoke test through the GKE Gateway:
+[docs/RUNBOOK.md](docs/RUNBOOK.md), sections 5 to 9. Destroy the lab from tx03v2 on the same day.
 
 Your fork is public, and so are its workflow logs. The deploy masks the project ID and the service
 account e-mails; never paste credentials or those values into an issue or a pull request.

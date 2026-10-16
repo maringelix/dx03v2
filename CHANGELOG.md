@@ -5,10 +5,19 @@ All notable changes to this project are documented here. The format follows
 [Conventional Commits](https://www.conventionalcommits.org/).
 
 ## [Unreleased]
+### Added
+
+- Cloud deploy now publishes the app source revision to `gitops/gcp` with example parameters, then
+  waits for Argo CD to report that exact revision `Synced` and `Healthy`. Direct push remains
+  available through the script when Argo CD is not managing the app; the Actions workflow always
+  uses GitOps.
+- Contract version 3 with tx03v2 records the R4 GitOps Application and restricted refresh permission,
+  coordinated with [tx03v2#14](https://github.com/maringelix/tx03v2/pull/14).
+
 
 ### Security
 
-- `deploy/local/tx03v2.ref` pins the local platform to the merged tx03v2 R3 commit, so
+- `deploy/local/tx03v2.ref` pins the local platform to the merged tx03v2 R4 commit, so
   `e2e-platform` and `family-ref` check the integrated infrastructure.
 
 - The smoke test never sends the admin token over plain HTTP to another machine (roadmap R3.17): it

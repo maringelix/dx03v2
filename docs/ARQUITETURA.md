@@ -83,7 +83,7 @@ flowchart LR
   gw -.->|"programa"| lb
   api -->|"TLS verify-full (ConfigMap cloudsql-ca)<br/>endpoint PSC /32"| sql[("Cloud SQL PostgreSQL 17")]
   sm["Secret Manager"] --> eso
-  gha["deploy-gcp (Workload Identity Federation,<br/>dx03v2-gha-deploy)"] -->|"Parameter Manager, Artifact Registry,<br/>endpoint DNS, kubectl apply -k"| gke
+  gha["deploy-gcp (Workload Identity Federation, workflow_dispatch)"] -->|"Parameter Manager, Artifact Registry, branch gitops/gcp, Argo CD"| gke
 ```
 
 O namespace, a RBAC do deployer, o ClusterSecretStore, o External Secrets Operator, o endereço
@@ -258,7 +258,7 @@ continuam cobertas aqui pelos mesmos checks.
 | UI lendo campos que a API tirou de `/health` (`TypeError` em produção) | API e página mudam juntas, com testes da página, testes de integração e o mesmo smoke em compose, kind e no load balancer (este `não executado em nuvem (v2)`) | `test:web`, `test:api`, smoke |
 | Imagens mutáveis (`:latest` e bases flutuantes) | tag = SHA de 40 caracteres num repositório de tags imutáveis; bases por digest; nada de `:latest` | `policy-images`; `contract-app` (deploy sem `:latest` e sem `docker push`) |
 | Senha e host do banco como secrets do GitHub e `kubectl create secret` no workflow | o pipeline não manipula segredos: ExternalSecrets do Secret Manager; a conta de deploy não tem nada no Secret Manager e nunca escreve Secrets | `contract-app` (só tipos da Role, nenhum `Secret`); `policy-workflows` |
-| ArgoCD sincronizando um caminho que nunca existiu, com o workflow do app como segundo dono do namespace | um único caminho de deploy (`scripts/deploy-gcp.sh`), limitado pela Role `dx03v2-deployer`; sem ArgoCD | `contract-app`; preflight `kubectl auth can-i` |
+| ArgoCD sincronizando um caminho que nunca existiu, com o workflow do app como segundo dono do namespace | o workflow configura a Application para o overlay e a branch GitOps, publica a revisão e espera o Argo CD sincronizar; o app pai ignora apenas os campos dinâmicos da Application | `contract-app` valida os patches; o sync em nuvem segue `não executado em nuvem (v2)` |
 | Workload Identity Federation criado à mão, aberto ao dono inteiro, e um vínculo extra feito à mão para o dx03 depois de falhar | pool e provider no Terraform do tx03v2, condição restrita aos dois repositórios e um sujeito exato (`environment:lab`) por conta de serviço; o harness recusa chaves de conta de serviço e o arquivo de credenciais fica fora do git e das imagens | `policy-workflows`, `policy-images` |
 | URL da API resolvida no build e comentário com o IP público | mesma origem (`/api` e `/` na mesma HTTPRoute); só placeholders e as faixas documentadas | `policy-identifiers`; `contract-app` |
 | Status escrito antes da evidência ("PRODUCTION READY", "100% HEALTHY") | matriz de status com rótulos e evidência; nada do Google Cloud afirmado sem `cloud_run_report` | `repo-structure`; revisão |

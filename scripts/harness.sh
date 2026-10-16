@@ -77,8 +77,9 @@ REQUIRED_FILES=(
   scripts/install-tools.sh scripts/update-tool-checksums.sh scripts/harness.sh scripts/repo-guardrails.sh
   scripts/dev-env.sh scripts/compose-smoke.sh scripts/e2e-kind.sh scripts/deploy-gcp.sh scripts/render-k8s.sh
   scripts/update-crd-schemas.sh scripts/crd-to-jsonschema.mjs scripts/check-manifests.mjs
-  scripts/check-build-context.mjs
+  scripts/check-build-context.mjs scripts/publish-gitops.sh scripts/render-gitops-application.mjs scripts/check-gitops-renderer.mjs
   deploy/k8s/components/gcp/params.example.env deploy/k8s/schemas/source.env
+  deploy/k8s/overlays/gcp/gitops-revision.yaml deploy/k8s/overlays/gcp-waf/gitops-revision.yaml
 )
 STABLE_CI_JOBS=(static test images e2e e2e-platform)
 
@@ -513,8 +514,12 @@ check_policy_workflows() {
     echo "$wf: id-token: write exactly once, in the permissions of the deploy job"
     rc=1
   }
-  [[ "$(awk '/^    permissions:/ { p = 1; next } p && /^      [a-z-]+:/ { sub(/^      /, ""); print; next } p { exit }' "$wf" | sort | tr '\n' ' ')" == 'contents: read id-token: write ' ]] || {
-    echo "$wf: the permissions of the deploy job must be exactly contents: read and id-token: write"
+  [[ "$(grep -cE '^      contents: write$' "$wf")" == 1 ]] || {
+    echo "$wf: contents: write must appear once, in the deploy job that publishes the GitOps branch"
+    rc=1
+  }
+  [[ "$(awk '/^    permissions:/ { p = 1; next } p && /^      [a-z-]+:/ { sub(/^      /, ""); print; next } p { exit }' "$wf" | sort | tr '\n' ' ')" == 'contents: write id-token: write ' ]] || {
+    echo "$wf: the deploy job permissions must be exactly contents: write and id-token: write"
     rc=1
   }
   [[ "$(awk '/^    steps:/ { s = 1; next } s && /^      - name:/ { sub(/^      - name:[[:space:]]*/, ""); print; exit }' "$wf")" == 'Check repository variables' ]] || {
@@ -732,7 +737,7 @@ check_kubeconform() {
 # The contract (docs/CONTRATO.md): the rendered manifests use exactly the agreed names, ranges and
 # ports (scripts/check-manifests.mjs), and the parameter validation refuses anything else.
 check_contract_app() {
-  local dir="$HARNESS_WORK_DIR/k8s-contract" rc=0 bad key what refused=0
+  local dir="$HARNESS_WORK_DIR/k8s-contract" rc=0 bad key what overlay example refused=0
   local -a bad_values=(
     'LB_SOURCE_RANGES=0.0.0.0/0'
     'LB_SOURCE_RANGES=130.211.0.0/22,35.191.0.0/16'
@@ -769,6 +774,30 @@ check_contract_app() {
     fi
   done
   check_contract_deploy_script || rc=1
+  example=deploy/k8s/components/gcp/params.example.env
+  mkdir -p "$dir/gitops-patches"
+  for overlay in gcp gcp-waf; do
+    if node scripts/render-gitops-application.mjs gcp "$overlay" "$example" "$example" \
+      >"$dir/gitops-patches/$overlay.json"; then
+      node scripts/check-gitops-renderer.mjs "$dir/gitops-patches/$overlay.json" "$dir/$overlay.yaml" || rc=1
+    else
+      rc=1
+    fi
+  done
+  expected_mode="DEPLOY_MODE=\"\${DEPLOY_MODE:-gitops}\""
+  if ! grep -qF 'DEPLOY_MODE: gitops' .github/workflows/deploy-gcp.yml ||
+    ! grep -qF 'contents: write' .github/workflows/deploy-gcp.yml ||
+    grep -qE '^    inputs:' .github/workflows/deploy-gcp.yml ||
+    ! grep -qF "$expected_mode" scripts/deploy-gcp.sh; then
+    echo "deploy-gcp must default to the GitOps branch publishing mode"
+    rc=1
+  fi
+  expected_push="git -C \"\$tmp/repo\" push --quiet origin \"HEAD:refs/heads/\$branch\""
+  if ! grep -qF "$expected_push" scripts/publish-gitops.sh ||
+    grep -q -- '--force' scripts/publish-gitops.sh; then
+    echo "publish-gitops.sh must push the cloud branch without force"
+    rc=1
+  fi
   summary "contract: manifests of ${K8S_OVERLAYS[*]}; params validation refused $refused of $((${#bad_values[@]} + 1)) bad inputs; $DEPLOY_SCRIPT reads the ${#CONTRACT_PARAMETER_KEYS[@]} keys with the fixed values, the Cloud SQL root and both overlays"
   return "$rc"
 }
