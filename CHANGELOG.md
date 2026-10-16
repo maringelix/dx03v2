@@ -14,7 +14,7 @@ All notable changes to this project are documented here. The format follows
 
 ### Security
 
-- `deploy/local/tx03v2.ref` pins the local platform to the merged tx03v2 R3 commit, so
+- `deploy/local/tx03v2.ref` pins the local platform to the merged tx03v2 R4 commit, so
   `e2e-platform` and `family-ref` check the integrated infrastructure.
 
 - The smoke test never sends the admin token over plain HTTP to another machine (roadmap R3.17): it
