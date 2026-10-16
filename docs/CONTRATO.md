@@ -61,8 +61,9 @@ Com o perfil `full` do `tx03v2`, o Argo CD é o dono dos manifests do app. O dep
 as imagens e os valores reais em `spec.source.kustomize` da Application `dx03v2` no namespace `argocd`;
 em seguida, publica o commit do app e `params.env` copiado do exemplo na branch `gitops/gcp` e pede
 refresh ao Argo CD. O app pai ignora somente `spec.source.path` e `spec.source.kustomize` dessa
-Application e usa `RespectIgnoreDifferences=true`. Para um cluster sem Argo CD, selecione `push` e o
-script aplica diretamente o overlay. A branch pública não recebe IDs reais da conta ou do projeto.
+Application e usa `RespectIgnoreDifferences=true`. Para um cluster sem Argo CD, execute o script
+localmente com `DEPLOY_MODE=push`; o workflow do Actions sempre usa GitOps. A branch pública não
+recebe IDs reais da conta ou do projeto.
 
 ## Workload Identity Federation do GitHub
 

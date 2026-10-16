@@ -514,8 +514,12 @@ check_policy_workflows() {
     echo "$wf: id-token: write exactly once, in the permissions of the deploy job"
     rc=1
   }
-  [[ "$(awk '/^    permissions:/ { p = 1; next } p && /^      [a-z-]+:/ { sub(/^      /, ""); print; next } p { exit }' "$wf" | sort | tr '\n' ' ')" == 'contents: read id-token: write ' ]] || {
-    echo "$wf: the permissions of the deploy job must be exactly contents: read and id-token: write"
+  [[ "$(grep -cE '^      contents: write$' "$wf")" == 1 ]] || {
+    echo "$wf: contents: write must appear once, in the deploy job that publishes the GitOps branch"
+    rc=1
+  }
+  [[ "$(awk '/^    permissions:/ { p = 1; next } p && /^      [a-z-]+:/ { sub(/^      /, ""); print; next } p { exit }' "$wf" | sort | tr '\n' ' ')" == 'contents: write id-token: write ' ]] || {
+    echo "$wf: the deploy job permissions must be exactly contents: write and id-token: write"
     rc=1
   }
   [[ "$(awk '/^    steps:/ { s = 1; next } s && /^      - name:/ { sub(/^      - name:[[:space:]]*/, ""); print; exit }' "$wf")" == 'Check repository variables' ]] || {
@@ -780,13 +784,15 @@ check_contract_app() {
       rc=1
     fi
   done
-  if ! grep -qF "DEPLOY_MODE: \$"'{{ inputs.mode }}' .github/workflows/deploy-gcp.yml ||
+  expected_mode="DEPLOY_MODE=\"\${DEPLOY_MODE:-gitops}\""
+  if ! grep -qF 'DEPLOY_MODE: gitops' .github/workflows/deploy-gcp.yml ||
     ! grep -qF 'contents: write' .github/workflows/deploy-gcp.yml ||
-    ! grep -qF 'default: gitops' .github/workflows/deploy-gcp.yml; then
+    grep -qE '^    inputs:' .github/workflows/deploy-gcp.yml ||
+    ! grep -qF "$expected_mode" scripts/deploy-gcp.sh; then
     echo "deploy-gcp must default to the GitOps branch publishing mode"
     rc=1
   fi
-  expected_push="git push --quiet origin \"HEAD:refs/heads/\$branch\""
+  expected_push="git -C \"\$tmp/repo\" push --quiet origin \"HEAD:refs/heads/\$branch\""
   if ! grep -qF "$expected_push" scripts/publish-gitops.sh ||
     grep -q -- '--force' scripts/publish-gitops.sh; then
     echo "publish-gitops.sh must push the cloud branch without force"

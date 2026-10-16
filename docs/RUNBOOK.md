@@ -119,10 +119,9 @@ RoleBinding `dx03v2-deployers` no namespace (`docs/CONTRATO.md`). Nada no Secret
 
 ## 7. Deploy
 
-No Actions, abra `deploy-gcp`, escolha a branch `main`, selecione `mode=gitops` (padrão) e aprove o
-environment `lab`. O modo GitOps exige o perfil `full` do tx03v2, a Application `dx03v2` no Argo CD
-e permissão para publicar `gitops/gcp`. Use `mode=push` somente se o Argo CD não estiver gerenciando
-o app.
+No Actions, abra `deploy-gcp`, escolha a branch `main` e aprove o environment `lab`. O workflow usa
+GitOps e exige o perfil `full` do tx03v2, a Application `dx03v2` no Argo CD e permissão para publicar
+`gitops/gcp`. Se o cluster não usa Argo CD, execute o script de um laptop com `DEPLOY_MODE=push`.
 
 O job valida as variáveis, instala `kubectl` e buildx, autentica por Workload Identity Federation,
 instala o gcloud e roda `scripts/deploy-gcp.sh`, que:
@@ -130,7 +129,7 @@ instala o gcloud e roda `scripts/deploy-gcp.sh`, que:
 1. confere o checkout limpo e lê o parâmetro `tx03v2-lab-contract`, validando suas 15 chaves, valores fixos e formatos;
 2. obtém kubeconfig pelo endpoint DNS, confere API groups, GatewayClass, RBAC do namespace e, no modo GitOps, o direito de atualizar a Application `dx03v2`;
 3. autentica no Artifact Registry, reaproveita tags existentes e constrói/publica as imagens `linux/amd64` que faltam;
-4. cria o ConfigMap `cloudsql-ca` após verificar a raiz do contrato e renderiza/valida o overlay `gcp-waf` ou `gcp`. Em `mode=gitops`, configura os valores reais na Application, publica o commit do app com `params.env` de exemplo na branch `gitops/gcp` e pede refresh ao Argo CD. Em `mode=push`, aplica o overlay com `kubectl apply -k`;
+4. cria o ConfigMap `cloudsql-ca` após verificar a raiz do contrato e renderiza/valida o overlay `gcp-waf` ou `gcp`. No workflow, configura os valores reais na Application, publica o commit do app com `params.env` de exemplo na branch `gitops/gcp` e pede refresh ao Argo CD. No uso local com `DEPLOY_MODE=push`, aplica o overlay com `kubectl apply -k`;
 5. no modo GitOps, espera a Application estar `Synced` e `Healthy` no commit publicado; depois espera ExternalSecrets e rollouts e confere as imagens SHA nos Deployments;
 6. espera o Gateway `Programmed` no endereço do contrato e registra as condições de HTTPRoute/políticas; roda `e2e/smoke.mjs` pelo load balancer. O Gateway só fala HTTP, então o token de admin não é lido nem enviado.
 

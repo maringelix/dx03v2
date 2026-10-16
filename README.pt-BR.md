@@ -49,7 +49,7 @@ A família do lab (v2):
 | Imagens: build, usuário numérico não root, sem npm nem shell no runtime da API, gate HIGH/CRITICAL do trivy | `verificado no CI` | `make build`; job `images` do CI |
 | Stack do compose (PostgreSQL → migrate → api → web em 127.0.0.1) + smoke test | `verificado localmente` | `scripts/dev-env.sh`, `scripts/compose-smoke.sh` (manual, fora do CI) |
 | Ponta a ponta no kind: Pod Security `restricted`, smoke test pelo nginx, enforcement de NetworkPolicy | `verificado no CI` | `make e2e` (`scripts/e2e-kind.sh`); job `e2e` do CI |
-| Deploy no Google Cloud (Artifact Registry, GKE Autopilot do tx03v2, ExternalSecrets do Secret Manager, Gateway da GKE + Cloud Armor, traces para o OpenTelemetry Collector e o Cloud Trace, smoke test; GitOps com Argo CD por padrão, push direto como alternativa) | `não executado em nuvem (v2)` | `.github/workflows/deploy-gcp.yml`, `scripts/deploy-gcp.sh`, `docs/RUNBOOK.md` |
+| Deploy no Google Cloud (Artifact Registry, GKE Autopilot do tx03v2, ExternalSecrets do Secret Manager, Gateway da GKE + Cloud Armor, traces para o OpenTelemetry Collector e o Cloud Trace, smoke test; workflow com GitOps do Argo CD, push direto pelo script como alternativa) | `não executado em nuvem (v2)` | `.github/workflows/deploy-gcp.yml`, `scripts/deploy-gcp.sh`, `docs/RUNBOOK.md` |
 | HTTPS no listener do Gateway | `planejado` | precisa de um certificado; fora do contrato v2 (`docs/CONTRATO.md`) |
 | Overlay `local-platform` para o lab local do tx03v2: render do kustomize + kubeconform estrito, asserções contra o contrato local e os kinds do AppProject `dx03v2`, cinco regras de alerta testadas com promtool | `verificado no CI` | `make static` (`kubeconform`, `contract-app`, `promtool-rules`) num contêiner Linux; job `static` do CI |
 | **O app na plataforma local completa do tx03v2** (kind + Artifact Registry, Cloud SQL, armazenamento de objetos, load balancer e servidor git emulados): imagens no registry do lab, GitOps com Argo CD (Synced, Healthy, self-heal) | `verificado no CI` | `make e2e-platform` (`scripts/deploy-local.sh`, `scripts/e2e-platform.sh`, `docs/LAB_LOCAL.md`); job `e2e-platform` do CI |
@@ -88,7 +88,8 @@ flowchart LR
   (`TRUST_PROXY_HOPS=2`). Os segredos vêm do Secret Manager pelo External Secrets; o banco é o Cloud
   SQL por um endpoint Private Service Connect. Namespace, RBAC, o endereço reservado, Cloud Armor,
   Cloud SQL e a camada de plataforma são do tx03v2. O workflow publica a revisão na branch
-  `gitops/gcp` para o Argo CD; push direto fica disponível para clusters sem Argo CD.
+  `gitops/gcp` para o Argo CD; o script também aceita push direto para clusters sem Argo CD,
+  enquanto o workflow do Actions usa sempre GitOps.
 - Decisões de design, diagramas por ambiente, a tabela AWS / Azure / Google Cloud e a tabela v1 → v2:
   [docs/ARQUITETURA.md](docs/ARQUITETURA.md).
 
@@ -131,7 +132,7 @@ conta de faturamento pode usar outra moeda: veja o
 um projeto dedicado com budget e destrua no mesmo dia.
 
 Siga o [docs/RUNBOOK.md](docs/RUNBOOK.md): bootstrap/apply/plataforma do tx03v2 → variáveis do
-GitHub do dx03v2 → workflow `deploy-gcp` (GitOps com Argo CD por padrão, ou push direto) → smoke
+GitHub do dx03v2 → workflow `deploy-gcp` (GitOps com Argo CD) → smoke
 test pelo load balancer → destroy do tx03v2 + checagem de sobras → issue `cloud_run_report`.
 
 ## Harness

@@ -79,10 +79,7 @@ const document = {
     source: {
       path: `deploy/k8s/overlays/${overlay}`,
       kustomize: {
-        images: [
-          `${apiExample.name}=${api.name}:${api.tag}`,
-          `${webExample.name}=${web.name}:${web.tag}`,
-        ],
+        images: [`${apiExample.name}=${api.name}:${api.tag}`, `${webExample.name}=${web.name}:${web.tag}`],
         patches,
       },
     },
