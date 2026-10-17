@@ -1,0 +1,16 @@
+# Waypoint of the service-mesh exercise in the local lab (Istio ambient on kind). The GKE lab runs the same
+# exercise on the sidecars of the managed Cloud Service Mesh (components/mesh-csm), because Autopilot cannot run
+# ambient. It serves only the Services labelled istio.io/use-waypoint=dx03v2-waypoint (the three mesh-* Services),
+# so the application itself keeps the plain ambient path (ztunnel, mTLS STRICT, L4 identity policy).
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: dx03v2-waypoint
+  labels:
+    istio.io/waypoint-for: service
+spec:
+  gatewayClassName: istio-waypoint
+  listeners:
+    - name: mesh
+      port: 15008
+      protocol: HBONE

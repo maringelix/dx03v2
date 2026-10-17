@@ -48,6 +48,8 @@ LB_SOURCE_RANGES="35.191.0.0/16,130.211.0.0/22"
 NODE_DNS_CACHE_IP="169.254.20.10"
 # Link-local source of the kubelet probes of Istio ambient pods (local-platform NetworkPolicies).
 AMBIENT_PROBE_IP="169.254.7.127"
+# The GKE metadata server that the sidecars of the managed mesh reach (Dataplane V2; mesh-csm NetworkPolicies).
+GKE_METADATA_IP="169.254.169.254"
 # google-github-actions/auth writes this credentials file into the workspace of the deploy-gcp job.
 GHA_CREDS_FILE="gha-creds-0123456789abcdef.json"
 # The contract as read by the deploy: the Parameter Manager parameter of tx03v2, its exact key set
@@ -57,7 +59,8 @@ CONTRACT_PARAMETER_NAME=tx03v2-lab-contract
 CONTRACT_PARAMETER_KEYS=(
   project-id region cluster-name network-name nodes-subnet-cidr db/endpoint-ip lb-source-ranges
   artifact-registry/repository db/secret-name app/admin-token-secret-name eso/cluster-secret-store
-  gateway/address-name gateway/address waf/security-policy deploy/service-account
+  gateway/address-name gateway/address dns/hostname dns/certificate-map mesh/management
+  waf/security-policy deploy/service-account
 )
 CONTRACT_CLOUDSQL_ROOT_SHA256=C7B0FCD282B346F1FCC45EE8A79ECF6EF6FAEF2D669BEEC664293B93D83E59BE
 
@@ -82,11 +85,22 @@ REQUIRED_FILES=(
   scripts/dev-env.sh scripts/compose-smoke.sh scripts/e2e-kind.sh scripts/deploy-gcp.sh scripts/render-k8s.sh
   scripts/update-crd-schemas.sh scripts/crd-to-jsonschema.mjs scripts/check-manifests.mjs
   scripts/check-build-context.mjs scripts/publish-gitops.sh scripts/render-gitops-application.mjs scripts/check-gitops-renderer.mjs
+  scripts/lib/deploy-mode.sh scripts/tests/deploy-mode.sh scripts/write-promotion-statements.sh
+  scripts/tests/promotion-statements.sh
   api/migrations/0002_expand_message_display_name.sql api/test/integration/migrations.test.ts
+  api/src/mesh-demo.ts api/src/mesh-probe.ts api/test/unit/mesh-demo.test.ts api/test/unit/mesh-probe.test.ts
   security/dast-baseline.conf security/fixtures/dast/zap.conf security/fixtures/dast/server.mjs
   security/fixtures/sonar/uncovered.ts security/fixtures/sonar/fixture.lcov
+  deploy/k8s/components/mesh-demo/kustomization.yaml deploy/k8s/components/mesh-demo/mesh-demo.yaml
+  deploy/k8s/components/mesh-full/kustomization.yaml deploy/k8s/components/mesh-full/mesh-policy.yaml
+  deploy/k8s/components/mesh-full/mesh-route.yaml deploy/k8s/components/mesh-full/waypoint.yaml
+  deploy/k8s/components/mesh-csm/kustomization.yaml
+  deploy/k8s/components/mesh-csm/mesh-policy.yaml deploy/k8s/components/mesh-csm/mesh-route.yaml
+  deploy/k8s/components/mesh-csm/networkpolicies.yaml
   deploy/k8s/components/gcp/params.example.env deploy/k8s/schemas/source.env
   deploy/k8s/overlays/gcp/gitops-revision.yaml deploy/k8s/overlays/gcp-waf/gitops-revision.yaml
+  deploy/k8s/overlays/gcp-full/kustomization.yaml deploy/k8s/overlays/gcp-full/gitops-revision.yaml
+  deploy/k8s/overlays/gcp-waf-full/kustomization.yaml deploy/k8s/overlays/gcp-waf-full/gitops-revision.yaml
 )
 STABLE_CI_JOBS=(static test images e2e e2e-platform)
 
@@ -364,12 +378,12 @@ check_policy_identifiers() {
   }
   # Addresses with their prefix length, so that the public ones are allowed only as the exact
   # contract ranges (35.191.0.0/16, 130.211.0.0/22), the NodeLocal DNSCache address and the link-local
-  # address Istio ambient uses for kubelet probes (a fixed Istio value, not an identifier).
+  # address Istio ambient uses for kubelet probes and the GKE metadata server (fixed values, not identifiers).
   out="$(grep -noP '(?<![0-9.])(?:[0-9]{1,3}\.){3}[0-9]{1,3}(?:/[0-9]{1,2})?(?![0-9]|\.[0-9])' "${files[@]}" |
-    grep -vP ':(10\.|127\.|172\.(1[6-9]|2[0-9]|3[01])\.|192\.168\.|192\.0\.2\.|198\.51\.100\.|203\.0\.113\.|0\.0\.0\.0|35\.191\.0\.0/16$|130\.211\.0\.0/22$|169\.254\.20\.10(/32)?$|169\.254\.7\.127(/32)?$)')" || true
+    grep -vP ':(10\.|127\.|172\.(1[6-9]|2[0-9]|3[01])\.|192\.168\.|192\.0\.2\.|198\.51\.100\.|203\.0\.113\.|0\.0\.0\.0|35\.191\.0\.0/16$|130\.211\.0\.0/22$|169\.254\.20\.10(/32)?$|169\.254\.7\.127(/32)?$|169\.254\.169\.254(/32)?$)')" || true
   [[ -z "$out" ]] || {
-    printf 'IP addresses must be private or documentation ranges (RFC 1918 / RFC 5737), the load balancer ranges %s, %s or %s:\n%s\n' \
-      "$LB_SOURCE_RANGES" "$NODE_DNS_CACHE_IP" "$AMBIENT_PROBE_IP" "$out"
+    printf 'IP addresses must be private or documentation ranges (RFC 1918 / RFC 5737), the load balancer ranges %s, %s, %s or %s:\n%s\n' \
+      "$LB_SOURCE_RANGES" "$NODE_DNS_CACHE_IP" "$AMBIENT_PROBE_IP" "$GKE_METADATA_IP" "$out"
     rc=1
   }
   # GUIDs are never identifiers of this lab: only the all-zero placeholder, plus the UUID test
@@ -569,8 +583,8 @@ check_policy_workflows() {
     in_deploy && /^    permissions:[[:space:]]*$/ { in_permissions = 1; next }
     in_permissions && /^      [a-z-]+:/ { sub(/^      /, ""); print; next }
     in_permissions { exit }
-  ' "$wf" | sort | tr '\n' ' ')" == 'actions: read attestations: read contents: write id-token: write packages: read ' ]] || {
-    echo "$wf: the deploy job permissions must be limited to actions/attestations/package reads, GitOps writes and OIDC"
+  ' "$wf" | sort | tr '\n' ' ')" == 'actions: read artifact-metadata: write attestations: write contents: write id-token: write packages: read ' ]] || {
+    echo "$wf: the deploy job permissions must be limited to actions/package reads, the promotion attestation writes, GitOps writes and OIDC"
     rc=1
   }
   grep -qF 'Re-verify the bundle and signer before requesting Google Cloud credentials' "$wf" || {
@@ -774,16 +788,22 @@ check_shellcheck() {
 
 check_kubeconform() {
   local dir="$HARNESS_WORK_DIR/k8s-kubeconform" overlay
+  local -a standard_schemas=()
   need kubectl kubeconform
   render_overlays "$dir"
   mkdir -p "$HARNESS_WORK_DIR/kubeconform-cache"
   for overlay in "${K8S_OVERLAYS[@]}"; do
     echo "== $overlay"
+    # The local lab installs the experimental channel of the Gateway API (the HTTPRoute retries of the mesh
+    # exercise): its manifests are checked against the catalog schemas of that channel, and every other overlay
+    # against the standard v1.5.0 schemas in deploy/k8s/schemas, the version that GKE serves.
+    standard_schemas=(-schema-location "$K8S_SCHEMA_DIR/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json")
+    [[ "$overlay" != local-platform ]] || standard_schemas=()
     kubeconform -strict -summary -output text \
       -kubernetes-version "$K8S_SCHEMA_KUBERNETES_VERSION" \
       -cache "$HARNESS_WORK_DIR/kubeconform-cache" \
       -schema-location "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/$K8S_SCHEMA_REF/{{.NormalizedKubernetesVersion}}-standalone{{.StrictSuffix}}/{{.ResourceKind}}{{.KindSuffix}}.json" \
-      -schema-location "$K8S_SCHEMA_DIR/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json" \
+      "${standard_schemas[@]}" \
       -schema-location "https://raw.githubusercontent.com/datreeio/CRDs-catalog/$CRD_SCHEMA_REF/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json" \
       "$dir/$overlay.yaml" | tee "$dir/$overlay.summary"
   done
@@ -800,6 +820,8 @@ check_contract_app() {
     'DB_ENDPOINT_IP=203.0.113.5'
     'DB_ENDPOINT_IP=10.30.0.0/20'
     'GATEWAY_ADDRESS_NAME=Tx03v2_Lab'
+    'DNS_HOSTNAME=lab'
+    'CERT_MAP=Tx03v2_Lab'
     'WAF_SECURITY_POLICY='
     "API_IMAGE=us-central1-docker.pkg.dev/$PLACEHOLDER_PROJECT/dx03v2/api:main"
     "WEB_IMAGE=us-central1-docker.pkg.dev/$PLACEHOLDER_PROJECT/other/web:0000000000000000000000000000000000000000"
@@ -810,6 +832,7 @@ check_contract_app() {
   render_overlays "$dir"
   node scripts/check-manifests.mjs --params "$K8S_PARAMS_EXAMPLE" --local-params "$K8S_LOCAL_PARAMS_EXAMPLE" \
     local="$dir/local.yaml" gcp="$dir/gcp.yaml" gcp-waf="$dir/gcp-waf.yaml" \
+    gcp-full="$dir/gcp-full.yaml" gcp-waf-full="$dir/gcp-waf-full.yaml" \
     local-platform="$dir/local-platform.yaml" || rc=1
   # scripts/deploy-gcp.sh writes params.env from the contract parameter: a widened range, a public
   # or malformed address, an unknown or a missing key (-KEY) never reach the manifests.
@@ -832,7 +855,7 @@ check_contract_app() {
   check_contract_deploy_script || rc=1
   example=deploy/k8s/components/gcp/params.example.env
   mkdir -p "$dir/gitops-patches"
-  for overlay in gcp gcp-waf; do
+  for overlay in gcp gcp-waf gcp-full gcp-waf-full; do
     if node scripts/render-gitops-application.mjs gcp "$overlay" "$example" "$example" \
       >"$dir/gitops-patches/$overlay.json"; then
       node scripts/check-gitops-renderer.mjs "$dir/gitops-patches/$overlay.json" "$dir/$overlay.yaml" || rc=1
@@ -845,9 +868,9 @@ check_contract_app() {
     -e 's#tx03v2-lab-example/dx03v2/web:[0-9a-f]{40}#tx03v2-fork-lab/dx03v2/web@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb#' \
     "$example" >"$dir/fork-digest-params.env"
   if ! k8s_validate_params "$dir/fork-digest-params.env" ||
-    ! node scripts/render-gitops-application.mjs gcp gcp "$dir/fork-digest-params.env" "$example" \
+    ! node scripts/render-gitops-application.mjs gcp gcp-full "$dir/fork-digest-params.env" "$example" \
       >"$dir/gitops-patches/fork-digest.json" ||
-    ! node scripts/check-gitops-renderer.mjs "$dir/gitops-patches/fork-digest.json" "$dir/gcp.yaml" ||
+    ! node scripts/check-gitops-renderer.mjs "$dir/gitops-patches/fork-digest.json" "$dir/gcp-full.yaml" ||
     ! grep -qF 'tx03v2-fork-lab/dx03v2/api@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' \
       "$dir/gitops-patches/fork-digest.json" ||
     ! grep -qF 'tx03v2-fork-lab/dx03v2/web@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb' \
@@ -855,13 +878,20 @@ check_contract_app() {
     echo "GitOps must preserve exact approved image digests for a fork-specific Artifact Registry project"
     rc=1
   fi
-  expected_mode="DEPLOY_MODE=\"\${DEPLOY_MODE:-gitops}\""
-  if ! grep -qF 'DEPLOY_MODE: gitops' .github/workflows/deploy-gcp.yml ||
+  expected_mode="DEPLOY_MODE=\"\${DEPLOY_MODE:-auto}\""
+  # shellcheck disable=SC2016 # literal lines of the workflow and the deploy script, not expansions
+  if ! grep -qF 'default: auto' .github/workflows/deploy-gcp.yml ||
+    ! grep -qF 'DEPLOY_MODE: ${{ inputs.deploy_mode }}' .github/workflows/deploy-gcp.yml ||
+    ! grep -qF 'PLATFORM_PROFILE: ${{ inputs.platform_profile }}' .github/workflows/deploy-gcp.yml ||
+    ! grep -qF 'attestations: write' .github/workflows/deploy-gcp.yml ||
+    ! grep -qF 'PLATFORM_PROFILE="${PLATFORM_PROFILE:-core}"' scripts/deploy-gcp.sh ||
     ! grep -qF 'contents: write' .github/workflows/deploy-gcp.yml ||
     ! grep -qE '^      release_run_id:' .github/workflows/deploy-gcp.yml ||
     ! grep -qF 'needs: verify-release' .github/workflows/deploy-gcp.yml ||
-    ! grep -qF "$expected_mode" scripts/deploy-gcp.sh; then
-    echo "deploy-gcp must require a verified release and default to the GitOps branch publishing mode"
+    ! grep -qF 'scripts/deploy-gcp.sh --promote-only' .github/workflows/deploy-gcp.yml ||
+    ! grep -qF "$expected_mode" scripts/deploy-gcp.sh ||
+    ! grep -qF 'actions/attest@' .github/workflows/deploy-gcp.yml; then
+    echo "deploy-gcp must verify the release, promote by digest without rebuilding, attest the promoted digests and default to automatic GitOps selection"
     rc=1
   fi
   expected_push="git -C \"\$tmp/repo\" push --quiet origin \"HEAD:refs/heads/\$branch\""
@@ -870,7 +900,7 @@ check_contract_app() {
     echo "publish-gitops.sh must push the cloud branch without force"
     rc=1
   fi
-  summary "contract: manifests of ${K8S_OVERLAYS[*]}; params validation refused $refused of $((${#bad_values[@]} + 1)) bad inputs; $DEPLOY_SCRIPT reads the ${#CONTRACT_PARAMETER_KEYS[@]} keys with the fixed values, the Cloud SQL root and both overlays"
+  summary "contract: manifests of ${K8S_OVERLAYS[*]}; params validation refused $refused of $((${#bad_values[@]} + 1)) bad inputs; $DEPLOY_SCRIPT reads the ${#CONTRACT_PARAMETER_KEYS[@]} keys with the fixed values, the Cloud SQL root and the four overlays"
   return "$rc"
 }
 
@@ -922,10 +952,13 @@ check_contract_deploy_script() {
     echo "$deploy: exactly one pinned SHA-256 (the contract root; the bundle file rotates and is never pinned)"
     rc=1
   }
-  # Both overlays: gcp-waf by default, gcp when waf/security-policy is none (stale policies deleted).
+  # The overlays: gcp-waf by default, gcp when waf/security-policy is none (stale policies deleted), and
+  # their -full variants for PLATFORM_PROFILE=full.
+  # shellcheck disable=SC2016 # literal line of the deploy script, not an expansion
   if ! grep -qxF 'OVERLAY=gcp-waf' "$deploy" || ! grep -qE '^    OVERLAY=gcp$' "$deploy" ||
+    ! grep -qF 'if [[ "$OVERLAY" == gcp-waf ]]; then OVERLAY=gcp-waf-full; else OVERLAY=gcp-full; fi' "$deploy" ||
     ! grep -qF 'delete gcpbackendpolicies.networking.gke.io api web --ignore-not-found' "$deploy"; then
-    echo "$deploy must deploy overlays/gcp-waf, or overlays/gcp when waf/security-policy is none and then delete the GCPBackendPolicies"
+    echo "$deploy must deploy overlays/gcp-waf, or overlays/gcp when waf/security-policy is none (their -full variants with PLATFORM_PROFILE=full) and then delete the GCPBackendPolicies"
     rc=1
   fi
   # shellcheck disable=SC2016 # literal lines of the deploy script, not expansions
@@ -1207,6 +1240,15 @@ check_promtool_rules() {
   (cd "$dir" && promtool test rules alerts-test.yaml)
 }
 
+check_deploy_mode() {
+  bash scripts/tests/deploy-mode.sh
+}
+
+check_promotion_statements() {
+  need jq
+  bash scripts/tests/promotion-statements.sh
+}
+
 register_checks() {  register static tool-versions check_tool_versions
   register static repo-structure check_repo_structure
   register static version-consistency check_version_consistency
@@ -1215,6 +1257,8 @@ register_checks() {  register static tool-versions check_tool_versions
   register static policy-images check_policy_images
   register static policy-app check_policy_app
   register static policy-cloud check_policy_cloud
+  register static deploy-mode check_deploy_mode
+  register static promotion-statements check_promotion_statements
   register static trivyignore-policy check_trivyignore_policy
   register static npm-ci check_npm_ci
   register static eslint check_eslint

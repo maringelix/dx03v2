@@ -1,15 +1,17 @@
 // Structural checks of the rendered Kubernetes manifests against contract v2 (docs/CONTRATO.md)
 // and the hardening rules of docs/GUARDRAILS.md. Used by the harness check `contract-app`.
 //   node scripts/check-manifests.mjs --params <params.env> --local-params <params.env> local=<file> gcp=<file>
-//     gcp-waf=<file> local-platform=<file>
+//     gcp-waf=<file> gcp-full=<file> gcp-waf-full=<file> local-platform=<file>
 import { readFileSync } from 'node:fs';
 import { parseAllDocuments } from 'yaml';
 
 const NAMESPACE = 'dx03v2';
 // Kinds the deployer Role of tx03v2 may write (docs/CONTRATO.md). Secrets are written by ESO only.
 const DEPLOYER_KINDS = new Set([
+  'AuthorizationPolicy',
   'ConfigMap',
   'Deployment',
+  'DestinationRule',
   'ExternalSecret',
   'GCPBackendPolicy',
   'Gateway',
@@ -20,6 +22,7 @@ const DEPLOYER_KINDS = new Set([
   'PodDisruptionBudget',
   'Service',
   'ServiceAccount',
+  'VirtualService',
 ]);
 // Kinds that exist only on Google Cloud: the local overlay (kind) never renders them.
 const GCP_ONLY_KINDS = [
@@ -52,6 +55,15 @@ const GCP_NETWORK_POLICIES = [
   'api-egress-to-collector',
   'api-ingress-from-lb',
   'web-ingress-from-lb',
+];
+// Added by the sidecar mesh of the profile full (components/mesh-csm).
+const MESH_CSM_NETWORK_POLICIES = [
+  'api-ingress-from-collector',
+  'mesh-demo-ingress',
+  'mesh-intruder-egress',
+  'mesh-probe-egress',
+  'mesh-sidecar-egress',
+  'web-ingress-from-collector',
 ];
 // Autopilot, general-purpose compute class on clusters with bursting (GKE doc "Resource requests in
 // Autopilot", checked 2026-10-12): at least 50m CPU and 52 MiB of memory per Pod, and between 1 and
@@ -191,9 +203,16 @@ function podChecks(where, workload) {
 // largest init container (Kubernetes effective requests).
 function autopilotChecks(where, workload) {
   const spec = workload.spec?.template?.spec ?? {};
+  // The istio-proxy container that the managed mesh injects (profile full) is billed with the Pod: its
+  // size is the one the manifest asks for in the sidecar.istio.io annotations.
+  const annotations = workload.spec?.template?.metadata?.annotations ?? {};
+  const proxy = {
+    cpu: cpuCores(annotations['sidecar.istio.io/proxyCPU'] ?? '0'),
+    memory: memoryBytes(annotations['sidecar.istio.io/proxyMemory'] ?? '0'),
+  };
   const effective = (read, key) => {
     const value = (c) => read(c.resources?.requests?.[key]);
-    const app = (spec.containers ?? []).reduce((sum, c) => sum + value(c), 0);
+    const app = (spec.containers ?? []).reduce((sum, c) => sum + value(c), proxy[key]);
     return Math.max(app, ...(spec.initContainers ?? []).map(value));
   };
   const cpu = effective(cpuCores, 'cpu');
@@ -368,6 +387,7 @@ function localChecks({ objs }) {
 }
 
 function gcpChecks(overlay, { objs }, params, waf) {
+  const full = overlay.endsWith('-full');
   for (const o of objs) {
     check(DEPLOYER_KINDS.has(o.kind), `${overlay}: ${o.kind} is outside what the dx03v2-deployer Role may write`);
     eq(
@@ -375,11 +395,12 @@ function gcpChecks(overlay, { objs }, params, waf) {
       'dx03v2',
       `${overlay}: ${o.kind}/${o.metadata?.name} part-of label`,
     );
-    // deploy-params is dropped by kustomize; the GKE Gateway and its policies need no annotation.
+    // deploy-params is dropped by kustomize; the GKE Gateway and its policies need no annotation, except
+    // the Certificate Map of the Gateway in the profile full.
     eq(
       Object.keys(o.metadata?.annotations ?? {}),
-      [],
-      `${overlay}: ${o.kind}/${o.metadata?.name} carries no annotations`,
+      full && o.kind === 'Gateway' ? ['networking.gke.io/certmap'] : [],
+      `${overlay}: ${o.kind}/${o.metadata?.name} annotations`,
     );
   }
   const config = find(objs, 'ConfigMap', 'app-config')?.data ?? {};
@@ -424,15 +445,51 @@ function gcpChecks(overlay, { objs }, params, waf) {
     [{ type: 'NamedAddress', value: params.GATEWAY_ADDRESS_NAME }],
     `${overlay}: reserved address name from params`,
   );
-  eq(
-    gateway?.spec?.listeners,
-    [{ name: 'http', protocol: 'HTTP', port: 80, allowedRoutes: { namespaces: { from: 'Same' } } }],
-    `${overlay}: one HTTP listener on 80 (HTTPS planned)`,
-  );
-  eq(names(objs, 'HTTPRoute'), ['dx03v2'], `${overlay}: exactly one HTTPRoute`);
+  const allowedRoutes = { namespaces: { from: 'Same' } };
+  if (full) {
+    // HTTPS of the profile full: the Certificate Map of tx03v2 (contract key dns/certificate-map) on the
+    // Gateway, no TLS section and no Secret; the HTTP listener only redirects to the same hostname.
+    eq(
+      gateway?.metadata?.annotations,
+      { 'networking.gke.io/certmap': params.CERT_MAP },
+      `${overlay}: Gateway names the Certificate Map of the contract`,
+    );
+    eq(
+      gateway?.spec?.listeners,
+      [
+        { name: 'http', hostname: params.DNS_HOSTNAME, protocol: 'HTTP', port: 80, allowedRoutes },
+        { name: 'https', hostname: params.DNS_HOSTNAME, protocol: 'HTTPS', port: 443, allowedRoutes },
+      ],
+      `${overlay}: HTTP and HTTPS listeners on the contract hostname, HTTPS without a tls section`,
+    );
+    eq(names(objs, 'HTTPRoute'), ['dx03v2', 'dx03v2-http-redirect'], `${overlay}: the app route and the redirect`);
+    const redirect = find(objs, 'HTTPRoute', 'dx03v2-http-redirect')?.spec;
+    eq(
+      redirect?.parentRefs,
+      [{ name: 'dx03v2', sectionName: 'http' }],
+      `${overlay}: redirect attaches to port 80 only`,
+    );
+    eq(redirect?.hostnames, [params.DNS_HOSTNAME], `${overlay}: redirect hostname`);
+    eq(
+      redirect?.rules,
+      [{ filters: [{ type: 'RequestRedirect', requestRedirect: { scheme: 'https', statusCode: 301 } }] }],
+      `${overlay}: HTTP answers 301 to HTTPS and routes nothing to the app`,
+    );
+  } else {
+    eq(
+      gateway?.spec?.listeners,
+      [{ name: 'http', protocol: 'HTTP', port: 80, allowedRoutes }],
+      `${overlay}: one HTTP listener on 80 (HTTPS only in the profile full)`,
+    );
+    eq(names(objs, 'HTTPRoute'), ['dx03v2'], `${overlay}: exactly one HTTPRoute`);
+  }
   const route = find(objs, 'HTTPRoute', 'dx03v2')?.spec;
-  eq(route?.parentRefs, [{ name: 'dx03v2', sectionName: 'http' }], `${overlay}: HTTPRoute parent`);
-  check(route?.hostnames === undefined, `${overlay}: HTTPRoute without hostnames (reached by the Gateway address)`);
+  eq(route?.parentRefs, [{ name: 'dx03v2', sectionName: full ? 'https' : 'http' }], `${overlay}: HTTPRoute parent`);
+  if (full) {
+    eq(route?.hostnames, [params.DNS_HOSTNAME], `${overlay}: HTTPRoute hostname from the contract`);
+  } else {
+    check(route?.hostnames === undefined, `${overlay}: HTTPRoute without hostnames (reached by the Gateway address)`);
+  }
   eq(
     (route?.rules ?? []).map((r) => [
       r.matches?.length,
@@ -518,10 +575,11 @@ function gcpChecks(overlay, { objs }, params, waf) {
     `${overlay}: HPA`,
   );
 
-  // Exactly the base policies plus the four Google Cloud edges: nothing else widens the namespace.
+  // Exactly the base policies plus the Google Cloud edges (and, in the profile full, those of the sidecar
+  // mesh): nothing else widens the namespace.
   eq(
     names(objs, 'NetworkPolicy'),
-    [...BASE_NETWORK_POLICIES, ...GCP_NETWORK_POLICIES].sort(),
+    [...BASE_NETWORK_POLICIES, ...GCP_NETWORK_POLICIES, ...(full ? MESH_CSM_NETWORK_POLICIES : [])].sort(),
     `${overlay}: NetworkPolicies`,
   );
   eq(
@@ -589,6 +647,306 @@ function gcpChecks(overlay, { objs }, params, waf) {
     ],
     `${overlay}: api -> OpenTelemetry Collector (4318) only`,
   );
+  if (full) meshCsmChecks(overlay, { objs }, params);
+}
+
+// The service-mesh exercise on the managed Cloud Service Mesh (Istio sidecars, tx03v2 contract version 4).
+function meshCsmChecks(overlay, { objs }, params) {
+  meshDemoChecks(overlay, { objs }, params.API_IMAGE);
+  for (const name of ['mesh-stable', 'mesh-canary']) {
+    autopilotChecks(`${overlay}: Deployment/${name}`, find(objs, 'Deployment', name));
+  }
+  // Every workload gets an explicit proxy size, and the API bypasses the proxy for its Cloud SQL endpoint
+  // (the migrate initContainer connects before the sidecar runs; the database is outside the mesh).
+  for (const name of ['api', 'web', 'mesh-stable', 'mesh-canary']) {
+    const annotations = find(objs, 'Deployment', name)?.spec?.template?.metadata?.annotations ?? {};
+    eq(
+      Object.keys(annotations).sort(),
+      [
+        ...(name === 'api' ? ['traffic.sidecar.istio.io/excludeOutboundIPRanges'] : []),
+        'sidecar.istio.io/proxyCPU',
+        'sidecar.istio.io/proxyMemory',
+        'sidecar.istio.io/proxyMemoryLimit',
+      ].sort(),
+      `${overlay}: Deployment/${name} pod annotations`,
+    );
+    eq(
+      [
+        annotations['sidecar.istio.io/proxyCPU'],
+        annotations['sidecar.istio.io/proxyMemory'],
+        annotations['sidecar.istio.io/proxyMemoryLimit'],
+      ],
+      ['50m', '96Mi', '192Mi'],
+      `${overlay}: Deployment/${name} sidecar size`,
+    );
+  }
+  eq(
+    find(objs, 'Deployment', 'api')?.spec?.template?.metadata?.annotations?.[
+      'traffic.sidecar.istio.io/excludeOutboundIPRanges'
+    ],
+    `${params.DB_ENDPOINT_IP}/32`,
+    `${overlay}: the Cloud SQL endpoint bypasses the proxy`,
+  );
+
+  const destination = (name) => ({ host: `${name}.dx03v2.svc.cluster.local`, port: { number: 3000 } });
+  const route = find(objs, 'VirtualService', 'mesh-demo')?.spec;
+  eq(route?.hosts, ['mesh-demo.dx03v2.svc.cluster.local'], `${overlay}: mesh route host`);
+  const rule = (name) => (route?.http ?? []).find((entry) => entry.name === name);
+  eq(
+    rule('weighted-canary')?.route,
+    [
+      { destination: destination('mesh-stable'), weight: 80 },
+      { destination: destination('mesh-canary'), weight: 20 },
+    ],
+    `${overlay}: canary traffic split`,
+  );
+  eq(rule('weighted-canary')?.match, [{ uri: { exact: '/variant' } }], `${overlay}: the split applies to /variant`);
+  eq(
+    [rule('bounded-retries')?.retries, rule('bounded-retries')?.route],
+    [{ attempts: 2, perTryTimeout: '1s', retryOn: '5xx' }, [{ destination: destination('mesh-canary') }]],
+    `${overlay}: bounded retry policy`,
+  );
+  eq(
+    rule('stable-fallback')?.route,
+    [{ destination: destination('mesh-stable') }],
+    `${overlay}: other paths go to the stable backend`,
+  );
+  eq(
+    (route?.http ?? []).map((entry) => entry.name),
+    ['weighted-canary', 'bounded-retries', 'stable-fallback'],
+    `${overlay}: route order`,
+  );
+  const outlier = find(objs, 'DestinationRule', 'mesh-canary')?.spec;
+  eq(outlier?.host, 'mesh-canary.dx03v2.svc.cluster.local', `${overlay}: ejection applies to the canary`);
+  eq(
+    [
+      outlier?.trafficPolicy?.outlierDetection?.consecutive5xxErrors,
+      outlier?.trafficPolicy?.outlierDetection?.maxEjectionPercent,
+    ],
+    [3, 100],
+    `${overlay}: repeated canary failures eject the endpoint`,
+  );
+  const policy = find(objs, 'AuthorizationPolicy', 'mesh-demo')?.spec;
+  eq(
+    policy?.selector,
+    { matchLabels: { 'app.kubernetes.io/name': 'mesh-demo' } },
+    `${overlay}: identity policy selects the demo backends`,
+  );
+  eq(policy?.action, 'ALLOW', `${overlay}: identity policy is an allow list`);
+  eq(
+    policy?.rules,
+    [
+      {
+        from: [{ source: { principals: ['*/ns/dx03v2/sa/mesh-probe'] } }],
+        to: [{ operation: { ports: ['3000'], methods: ['GET'], paths: ['/variant', '/fail', '/healthz'] } }],
+      },
+    ],
+    `${overlay}: only the mesh-probe identity may use the exercise`,
+  );
+
+  const policies = (name) => find(objs, 'NetworkPolicy', name)?.spec;
+  const demoPods = { matchLabels: { 'app.kubernetes.io/name': 'mesh-demo' } };
+  const clientPods = (name) => ({ matchLabels: { 'app.kubernetes.io/name': name } });
+  eq(
+    policies('mesh-demo-ingress'),
+    {
+      podSelector: demoPods,
+      policyTypes: ['Ingress'],
+      ingress: [
+        {
+          from: [{ podSelector: clientPods('mesh-probe') }, { podSelector: clientPods('mesh-intruder') }],
+          ports: [{ protocol: 'TCP', port: 3000 }],
+        },
+      ],
+    },
+    `${overlay}: demo backends accept their two clients on 3000 only`,
+  );
+  for (const client of ['mesh-probe', 'mesh-intruder']) {
+    eq(
+      policies(`${client}-egress`),
+      {
+        podSelector: clientPods(client),
+        policyTypes: ['Egress'],
+        egress: [{ to: [{ podSelector: demoPods }], ports: [{ protocol: 'TCP', port: 3000 }] }],
+      },
+      `${overlay}: ${client} reaches only the demo backends on 3000`,
+    );
+  }
+  // The sidecars reach the managed control plane (Google APIs on 443) and the GKE metadata server: public
+  // addresses on 443 and one link-local address on 80. Private ranges stay closed (docs/RUNBOOK.md).
+  eq(
+    policies('mesh-sidecar-egress'),
+    {
+      podSelector: {},
+      policyTypes: ['Egress'],
+      egress: [
+        {
+          to: [{ ipBlock: { cidr: '0.0.0.0/0', except: ['10.0.0.0/8', '172.16.0.0/12', '192.168.0.0/16'] } }],
+          ports: [{ protocol: 'TCP', port: 443 }],
+        },
+        { to: [{ ipBlock: { cidr: '169.254.169.254/32' } }], ports: [{ protocol: 'TCP', port: 80 }] },
+      ],
+    },
+    `${overlay}: sidecar egress is limited to public 443 and the metadata server`,
+  );
+  const collector = {
+    namespaceSelector: { matchLabels: { 'kubernetes.io/metadata.name': 'observability' } },
+    podSelector: { matchLabels: { 'app.kubernetes.io/name': 'opentelemetry-collector' } },
+  };
+  for (const [workload, port] of [
+    ['web', 8080],
+    ['api', 3000],
+  ]) {
+    eq(
+      policies(`${workload}-ingress-from-collector`),
+      {
+        podSelector: clientPods(workload),
+        policyTypes: ['Ingress'],
+        ingress: [{ from: [collector], ports: [{ protocol: 'TCP', port }] }],
+      },
+      `${overlay}: the synthetic probe reaches ${workload}:${port} only`,
+    );
+  }
+}
+
+// The two backends and the identities of the service-mesh exercise, shared by the ambient twin of the
+// local lab and by the sidecar mesh of the profile full.
+function meshDemoChecks(overlay, { objs }, approvedApiImage) {
+  for (const name of ['mesh-demo', 'mesh-probe', 'mesh-intruder']) {
+    eq(
+      find(objs, 'ServiceAccount', name)?.automountServiceAccountToken,
+      false,
+      `${overlay}: ${name} does not receive a service account token`,
+    );
+  }
+  for (const [name, variant] of [
+    ['mesh-stable', 'stable'],
+    ['mesh-canary', 'canary'],
+  ]) {
+    const workload = find(objs, 'Deployment', name);
+    const spec = workload === undefined ? {} : podChecks(`${overlay}: Deployment/${name}`, workload);
+    eq(spec.serviceAccountName, 'mesh-demo', `${overlay}: ${name} service account`);
+    eq(spec.containers?.[0]?.image, approvedApiImage, `${overlay}: ${name} uses the approved API image`);
+    eq(spec.containers?.[0]?.args, ['dist/mesh-demo.js'], `${overlay}: ${name} runs the mesh exercise server`);
+    eq(
+      spec.containers?.[0]?.env?.find((entry) => entry.name === 'MESH_VARIANT')?.value,
+      variant,
+      `${overlay}: ${name} variant`,
+    );
+  }
+}
+
+// Route, ejection and identity policy of the ambient twin (local lab): the namespace waypoint enforces them.
+function meshAmbientChecks(overlay, { objs }, approvedApiImage, networkCidr) {
+  meshDemoChecks(overlay, { objs }, approvedApiImage);
+  // The waypoint serves only the three mesh-* Services; the application keeps the plain ambient path.
+  eq(
+    find(objs, 'Gateway', 'dx03v2-waypoint')?.spec,
+    { gatewayClassName: 'istio-waypoint', listeners: [{ name: 'mesh', port: 15008, protocol: 'HBONE' }] },
+    `${overlay}: waypoint of the exercise`,
+  );
+  eq(
+    all(objs, 'Service')
+      .filter((service) => service.metadata?.labels?.['istio.io/use-waypoint'] === 'dx03v2-waypoint')
+      .map((service) => service.metadata.name)
+      .sort(),
+    ['mesh-canary', 'mesh-demo', 'mesh-stable'],
+    `${overlay}: only the mesh-* Services use the waypoint`,
+  );
+  const route = find(objs, 'HTTPRoute', 'mesh-demo')?.spec;
+  eq(
+    route?.parentRefs?.map((parent) => [parent.group ?? '', parent.kind, parent.name, parent.port]),
+    [['', 'Service', 'mesh-demo', 3000]],
+    `${overlay}: mesh route attaches to the waypoint-handled service`,
+  );
+  const weighted = (route?.rules ?? []).find((rule) => rule.name === 'weighted-canary');
+  eq(
+    weighted?.backendRefs?.map((backend) => [backend.name, backend.port, backend.weight]),
+    [
+      ['mesh-stable', 3000, 80],
+      ['mesh-canary', 3000, 20],
+    ],
+    `${overlay}: canary traffic split`,
+  );
+  eq(
+    (route?.rules ?? []).find((rule) => rule.name === 'bounded-retries')?.retry,
+    { attempts: 2, codes: [500, 502, 503, 504] },
+    `${overlay}: bounded retry policy`,
+  );
+  const outlier = find(objs, 'DestinationRule', 'mesh-canary')?.spec?.trafficPolicy?.outlierDetection;
+  eq(
+    [outlier?.consecutive5xxErrors, outlier?.maxEjectionPercent],
+    [3, 100],
+    `${overlay}: repeated canary failures eject the endpoint`,
+  );
+  const allowed = find(objs, 'AuthorizationPolicy', 'mesh-demo')?.spec;
+  eq(allowed?.targetRefs, [{ group: '', kind: 'Service', name: 'mesh-demo' }], `${overlay}: waypoint L7 policy target`);
+  check(
+    allowed?.rules?.some((rule) =>
+      rule.from?.[0]?.source?.principals?.includes('cluster.local/ns/dx03v2/sa/mesh-probe'),
+    ),
+    `${overlay}: only the mesh-probe identity may use the exercise`,
+  );
+  eq(
+    find(objs, 'AuthorizationPolicy', 'mesh-demo-require-waypoint')?.spec?.rules?.[0]?.from?.[0]?.source?.principals,
+    ['cluster.local/ns/dx03v2/sa/dx03v2-waypoint'],
+    `${overlay}: demo backends accept the waypoint identity only`,
+  );
+  const waypointSelector = { 'gateway.networking.k8s.io/gateway-name': 'dx03v2-waypoint' };
+  for (const name of ['mesh-probe-egress', 'mesh-intruder-egress']) {
+    eq(
+      find(objs, 'NetworkPolicy', name)?.spec?.egress?.[0]?.to?.[0]?.podSelector?.matchLabels,
+      waypointSelector,
+      `${overlay}: ${name} cannot bypass the waypoint`,
+    );
+    eq(
+      find(objs, 'NetworkPolicy', name)?.spec?.egress?.[0]?.ports,
+      [{ protocol: 'TCP', port: 15008 }],
+      `${overlay}: ${name} reaches only the waypoint over HBONE`,
+    );
+  }
+  eq(
+    find(objs, 'NetworkPolicy', 'mesh-demo-ingress')?.spec?.ingress?.[0],
+    { from: [{ podSelector: { matchLabels: waypointSelector } }], ports: [{ protocol: 'TCP', port: 15008 }] },
+    `${overlay}: demo backends accept HBONE from the waypoint only`,
+  );
+  // The waypoint pod is selected by the default deny: its two edges are explicit and narrow.
+  const mesh = (name) => ({ matchLabels: { 'app.kubernetes.io/name': name } });
+  eq(
+    find(objs, 'NetworkPolicy', 'waypoint-ingress')?.spec,
+    {
+      podSelector: { matchLabels: waypointSelector },
+      policyTypes: ['Ingress'],
+      ingress: [
+        {
+          from: [{ podSelector: mesh('mesh-probe') }, { podSelector: mesh('mesh-intruder') }],
+          ports: [{ protocol: 'TCP', port: 15008 }],
+        },
+        { from: [{ ipBlock: { cidr: networkCidr } }], ports: [{ protocol: 'TCP', port: 15021 }] },
+      ],
+    },
+    `${overlay}: the waypoint accepts the two clients over HBONE and the kubelet on its status port`,
+  );
+  eq(
+    find(objs, 'NetworkPolicy', 'waypoint-egress')?.spec,
+    {
+      podSelector: { matchLabels: waypointSelector },
+      policyTypes: ['Egress'],
+      egress: [
+        { to: [{ podSelector: mesh('mesh-demo') }], ports: [{ protocol: 'TCP', port: 15008 }] },
+        {
+          to: [
+            {
+              namespaceSelector: { matchLabels: { 'kubernetes.io/metadata.name': 'istio-system' } },
+              podSelector: { matchLabels: { app: 'istiod' } },
+            },
+          ],
+          ports: [{ protocol: 'TCP', port: 15012 }],
+        },
+      ],
+    },
+    `${overlay}: the waypoint reaches the demo backends over HBONE and istiod for its configuration`,
+  );
 }
 
 // Kinds the AppProject dx03v2 of the tx03v2 local lab lets Argo CD sync (local contract,
@@ -597,6 +955,7 @@ const APPPROJECT_KINDS = new Set([
   'AuthorizationPolicy',
   'ConfigMap',
   'Deployment',
+  'DestinationRule',
   'ExternalSecret',
   'Gateway',
   'HTTPRoute',
@@ -643,8 +1002,8 @@ function localPlatformChecks({ objs }, params) {
 
   eq(
     all(objs, 'Gateway').map((g) => g.metadata?.name),
-    ['dx03v2'],
-    `${overlay}: exactly one Gateway`,
+    ['dx03v2', 'dx03v2-waypoint'],
+    `${overlay}: the Gateway of the app and the waypoint of the mesh exercise`,
   );
   const gw = find(objs, 'Gateway', 'dx03v2');
   eq(gw?.spec?.gatewayClassName, 'istio', `${overlay}: Gateway class`);
@@ -794,6 +1153,7 @@ function localPlatformChecks({ objs }, params) {
   );
   const hpa = find(objs, 'HorizontalPodAutoscaler', 'api')?.spec;
   eq([hpa?.minReplicas, hpa?.maxReplicas], [2, 4], `${overlay}: HPA`);
+  meshAmbientChecks(overlay, { objs }, params.API_IMAGE, params.NETWORK_CIDR);
 }
 
 const { params, files, localParams } = parseArgs(process.argv.slice(2));
@@ -803,8 +1163,8 @@ for (const [overlay, file] of Object.entries(files)) {
   commonChecks(overlay, rendered[overlay]);
   if (overlay === 'local') {
     localChecks(rendered[overlay]);
-  } else if (overlay === 'gcp' || overlay === 'gcp-waf') {
-    gcpChecks(overlay, rendered[overlay], params, overlay === 'gcp-waf');
+  } else if (['gcp', 'gcp-waf', 'gcp-full', 'gcp-waf-full'].includes(overlay)) {
+    gcpChecks(overlay, rendered[overlay], params, overlay.includes('-waf'));
   } else if (overlay === 'local-platform') {
     check(localParams !== undefined, 'local-platform needs --local-params');
     if (localParams !== undefined) {
@@ -815,13 +1175,18 @@ for (const [overlay, file] of Object.entries(files)) {
   }
 }
 // The WAF variant differs from the plain one only by the GCPBackendPolicies.
-if (rendered.gcp !== undefined && rendered['gcp-waf'] !== undefined) {
-  const withoutWaf = ({ objs }) =>
-    JSON.stringify(objs.filter((o) => o.kind !== 'GCPBackendPolicy').map((o) => canonical(o)));
-  check(
-    withoutWaf(rendered.gcp) === withoutWaf(rendered['gcp-waf']),
-    'gcp-waf: renders the same objects as gcp apart from the GCPBackendPolicies',
-  );
+for (const [plain, waf] of [
+  ['gcp', 'gcp-waf'],
+  ['gcp-full', 'gcp-waf-full'],
+]) {
+  if (rendered[plain] !== undefined && rendered[waf] !== undefined) {
+    const withoutWaf = ({ objs }) =>
+      JSON.stringify(objs.filter((o) => o.kind !== 'GCPBackendPolicy').map((o) => canonical(o)));
+    check(
+      withoutWaf(rendered[plain]) === withoutWaf(rendered[waf]),
+      `${waf}: renders the same objects as ${plain} apart from the GCPBackendPolicies`,
+    );
+  }
 }
 
 if (failures.length > 0) {

@@ -1,0 +1,38 @@
+# Ambient (waypoint) twin of the service-mesh exercise, used by the local-platform overlay of the tx03v2 local
+# lab (Istio ambient on kind), where the e2e proves it. The GKE profile full runs the same exercise on the
+# sidecars of the managed Cloud Service Mesh (mesh-csm). The backends are in mesh-demo; the three mesh-* Services
+# get the waypoint, nothing else in the namespace does. Needs the deploy-params ConfigMap of the local-platform
+# component (approved API image, lab network).
+apiVersion: kustomize.config.k8s.io/v1alpha1
+kind: Component
+labels:
+  - pairs:
+      app.kubernetes.io/part-of: dx03v2
+    includeSelectors: false
+    includeTemplates: true
+components:
+  - ../mesh-demo
+resources:
+  - waypoint.yaml
+  - mesh-policy.yaml
+  - mesh-route.yaml
+patches:
+  - target:
+      kind: Service
+      labelSelector: app.kubernetes.io/name=mesh-demo
+    patch: |-
+      - op: add
+        path: /metadata/labels/istio.io~1use-waypoint
+        value: dx03v2-waypoint
+replacements:
+  # The kubelet reaches the status port of the waypoint pod from the lab network.
+  - source:
+      kind: ConfigMap
+      name: deploy-params
+      fieldPath: data.NETWORK_CIDR
+    targets:
+      - select:
+          kind: NetworkPolicy
+          name: waypoint-ingress
+        fieldPaths:
+          - spec.ingress.1.from.0.ipBlock.cidr

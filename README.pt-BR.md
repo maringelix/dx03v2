@@ -41,18 +41,19 @@ A família do lab (v2):
 |---|---|---|
 | Lint, formatação e checagem de tipos (eslint, prettier, tsc para `api` e `web`) | `verificado no CI` | `make static` (`eslint`, `prettier`, `typecheck:*`); job `static` do CI |
 | Dockerfiles, workflows e scripts (hadolint, actionlint, shellcheck) | `verificado no CI` | `make static` (`hadolint`, `actionlint`, `shellcheck`) |
-| Manifests Kubernetes: render do kustomize + kubeconform estrito (local, gcp, gcp-waf) com schemas da Gateway API v1.5.0 gerados do asset oficial da release e os de `networking.gke.io` de um commit fixado do catálogo, asserções de contrato e de hardening, trivy config | `verificado no CI` | `make static` (`crd-schemas`, `kubeconform`, `contract-app`, `trivy-config`) |
-| Script de deploy contra o contrato v3 (as 15 chaves do Parameter Manager, valores fixos, raiz da CA do Cloud SQL, os dois overlays, chamadas `gcloud` só de leitura) | `verificado no CI` | `make static` (`contract-app`) |
+| Manifests Kubernetes: render do kustomize + kubeconform estrito (local, gcp, gcp-waf, gcp-full, gcp-waf-full, local-platform) com schemas da Gateway API v1.5.0 gerados do asset oficial da release e os de `networking.gke.io` de um commit fixado do catálogo, asserções de contrato e de hardening, trivy config | `verificado no CI` | `make static` (`crd-schemas`, `kubeconform`, `contract-app`, `trivy-config`) |
+| Script de deploy contra o contrato v4 (as 18 chaves do Parameter Manager, valores fixos, raiz da CA do Cloud SQL, os quatro overlays, chamadas `gcloud` só de leitura) | `verificado no CI` | `make static` (`contract-app`) |
 | Scan de segredos e políticas do repositório (só identificadores placeholder, actions e imagens fixadas, só Workload Identity Federation, regressões do v1, sem restos dos caminhos AWS e Azure) | `verificado no CI` | `make static` (`gitleaks`, `policy-*`, `repo-structure`, `version-consistency`) |
 | Testes unitários + de integração da API contra um PostgreSQL 17 real (gate de cobertura: linhas >= 80 %, branches >= 70 %), inclusive o `X-Forwarded-For` do load balancer do Google Cloud | `verificado no CI` | `make test` (`test:api`); job `test` do CI |
 | Testes da página com Testing Library + jsdom (gate de cobertura: linhas >= 70 %) | `verificado no CI` | `make test` (`test:web`); job `test` do CI |
 | Imagens: build, usuário numérico não root, sem npm nem shell no runtime da API, gate HIGH/CRITICAL do trivy | `verificado no CI` | `make build`; job `images` do CI |
 | DevSecOps: CodeQL `security-extended`, Quality Gate real do SonarQube com teste negativo, gate negativo de Gitleaks e OWASP ZAP Baseline | `verificado no CI` | `make static`, `make test`, `make dast`; jobs `static`, `test`, `images`; `docs/SEGURANCA_CI.md` |
-| Release assinada: GHCR recebe os mesmos image IDs aprovados no CI, SBOMs SPDX e attestations Sigstore; o verificador rejeita origem e signer incorretos | `implementado; ainda sem publicação` | `publish-images`, checks do bundle; nenhuma release foi publicada |
+| Release assinada: GHCR recebe os mesmos image IDs aprovados no CI, SBOMs SPDX e attestations Sigstore; o verificador rejeita origem e signer incorretos; o `deploy-gcp` promove os digests verificados para o Artifact Registry e atesta os digests promovidos, que a política do Kyverno do tx03v2 exige no perfil full | `implementado; ainda sem publicação` | `publish-images`, `deploy-gcp`, checks do bundle; nenhuma release foi publicada |
 | Stack do compose (PostgreSQL → migrate → api → web em 127.0.0.1) + smoke test | `verificado localmente` | `scripts/dev-env.sh`, `scripts/compose-smoke.sh` (manual, fora do CI) |
 | Ponta a ponta no kind: Pod Security `restricted`, smoke test pelo nginx, enforcement de NetworkPolicy | `verificado no CI` | `make e2e` (`scripts/e2e-kind.sh`); job `e2e` do CI |
-| Deploy no Google Cloud (Artifact Registry, GKE Autopilot do tx03v2, ExternalSecrets do Secret Manager, Gateway da GKE + Cloud Armor, traces para o OpenTelemetry Collector e o Cloud Trace, smoke test; workflow com GitOps do Argo CD, push direto pelo script como alternativa) | `não executado em nuvem (v2)` | `.github/workflows/deploy-gcp.yml`, `scripts/deploy-gcp.sh`, `docs/RUNBOOK.md` |
-| HTTPS no listener do Gateway | `planejado` | precisa de um certificado; fora do contrato v3 (`docs/CONTRATO.md`) |
+| Deploy no Google Cloud (Artifact Registry, GKE Autopilot do tx03v2, ExternalSecrets do Secret Manager, Gateway da GKE + Cloud Armor, OpenTelemetry e perfil full opcional com o Cloud Service Mesh gerenciado; inputs `core|full` e `auto|gitops|push`) | `não executado em nuvem (v2)` | `.github/workflows/deploy-gcp.yml`, `scripts/deploy-gcp.sh`, `docs/RUNBOOK.md` |
+| HTTPS no Gateway do perfil full (certificado gerenciado do Certificate Map do tx03v2, HTTP responde 301) | `implementado; não executado em nuvem (v2)` | `deploy/k8s/components/gcp-https`, `docs/CONTRATO.md` |
+| Exercício de malha nos sidecars do Cloud Service Mesh gerenciado (canário 80/20, retries limitados, ejeção, autorização por identidade) | `implementado; não executado em nuvem (v2)` | `deploy/k8s/components/mesh-csm`; o mesmo exercício roda na malha ambient do lab local (`make e2e-platform`, sonda `mesh`) |
 | Overlay `local-platform` para o lab local do tx03v2: render do kustomize + kubeconform estrito, asserções contra o contrato local e os kinds do AppProject `dx03v2`, cinco regras de alerta testadas com promtool | `verificado no CI` | `make static` (`kubeconform`, `contract-app`, `promtool-rules`) num contêiner Linux; job `static` do CI |
 | **O app na plataforma local completa do tx03v2** (kind + Artifact Registry, Cloud SQL, armazenamento de objetos, load balancer e servidor git emulados): imagens no registry do lab, GitOps com Argo CD (Synced, Healthy, self-heal) | `verificado no CI` | `make e2e-platform` (`scripts/deploy-local.sh`, `scripts/e2e-platform.sh`, `docs/LAB_LOCAL.md`); job `e2e-platform` do CI |
 | HTTPS pelo load balancer emulado e um Gateway do Istio (cert-manager, CA do lab), smoke test de fora do mesh (`SMOKE_EDGE=istio`); TLS `verify-full` no banco | `verificado no CI` | `make e2e-platform` (sonda `smoke`) |
@@ -85,9 +86,10 @@ flowchart LR
   ao `X-Forwarded-For` e conecta a partir de um Google Front End, então a API confia em dois saltos
   (`TRUST_PROXY_HOPS=2`). Os segredos vêm do Secret Manager pelo External Secrets; o banco é o Cloud
   SQL por um endpoint Private Service Connect. Namespace, RBAC, o endereço reservado, Cloud Armor,
-  Cloud SQL e a camada de plataforma são do tx03v2. O workflow publica a revisão na branch
-  `gitops/gcp` para o Argo CD; o script também aceita push direto para clusters sem Argo CD,
-  enquanto o workflow do Actions usa sempre GitOps.
+  Cloud SQL e a camada de plataforma são do tx03v2. O workflow pode publicar a revisão na branch
+  `gitops/gcp` para o Argo CD ou aplicar diretamente: em `auto` escolhe GitOps quando a Application
+  existe, e os inputs também aceitam `gitops` e `push`. O `platform_profile=full` acrescenta HTTPS no
+  hostname do contrato e o exercício de malha gerenciada.
 - Decisões de design, diagramas por ambiente, a tabela AWS / Azure / Google Cloud e a tabela v1 → v2:
   [docs/ARQUITETURA.md](docs/ARQUITETURA.md).
 
@@ -131,7 +133,7 @@ um projeto dedicado com budget e destrua no mesmo dia.
 
 Siga o [docs/RUNBOOK.md](docs/RUNBOOK.md): bootstrap/apply/plataforma do tx03v2 → variáveis do
 GitHub do dx03v2 → `publish-images` com `ci_run_id` de um CI verde na `main` → `deploy-gcp` com o
-`release_run_id` da publicação e aprovação do environment `lab` → smoke test pelo load balancer →
+`release_run_id` da publicação (perfil `core|full`, modo `auto|gitops|push`) e aprovação do environment `lab` → smoke test pelo load balancer →
 destroy do tx03v2 + checagem de sobras → issue `cloud_run_report`.
 
 ## Harness
@@ -165,7 +167,7 @@ Toda a documentação está em português do Brasil.
 | [FORK.md](FORK.md) | fork do lab (em inglês): o que o GitHub não copia, o lab local, a sua conta de nuvem |
 | [docs/ARQUITETURA.md](docs/ARQUITETURA.md) | diagramas (local, kind, Google Cloud), decisões, AWS / Azure / Google Cloud, v1 → v2 |
 | [docs/API.md](docs/API.md) | endpoints, erros, exemplos com curl |
-| [docs/CONTRATO.md](docs/CONTRATO.md) | contrato v3 tx03v2 ⇄ dx03v2 (lado do app; fonte da verdade no tx03v2) |
+| [docs/CONTRATO.md](docs/CONTRATO.md) | contrato v4 tx03v2 ⇄ dx03v2 (lado do app; fonte da verdade no tx03v2) |
 | [docs/RUNBOOK.md](docs/RUNBOOK.md) | desenvolvimento local, compose, e2e no kind, deploy no Google Cloud |
 | [docs/SEGURANCA_CI.md](docs/SEGURANCA_CI.md) | gates de CodeQL, SonarQube, Trivy, Gitleaks e ZAP |
 | [docs/MIGRATIONS.md](docs/MIGRATIONS.md) | migrações aditivas e regras de rollback |

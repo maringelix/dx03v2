@@ -80,12 +80,22 @@ source diferente falham. O manifesto e os arquivos SPDX ficam no Actions por 90 
 O workflow deploy-gcp recebe o ID da publicacao e, antes de solicitar aprovacao do environment lab,
 confere de novo o publisher, a execucao CI, seus cinco checks, os hashes dos SBOMs e as attestations.
 Depois da aprovacao copia os digests verificados do GHCR para o Artifact Registry sem rebuild, valida o digest e
-o image ID e publica os manifests por digest no Argo CD. A verificacao do bundle nao configura nem
-altera contas cloud.
+o image ID e publica os manifests por digest no Argo CD (ou aplica o overlay). A verificacao do bundle nao
+configura nem altera contas cloud.
 
 A cópia exige `roles/artifactregistry.writer` na identidade de deploy, limitada ao repositório `dx03v2`.
 O tx03v2 já concede esse papel no contrato de deploy (`docs/CONTRATO.md`); a identidade não recebe
 permissão de escrita no projeto inteiro.
+
+O workflow então assina uma atestação de promoção (`actions/attest`, predicado
+`https://github.com/maringelix/tx00v2/attestations/promoted-image/v1`) para cada digest do Artifact Registry. O
+predicado liga o repositório, o commit, o digest de origem do GHCR e o digest promovido; o workflow confere a
+assinatura com `gh attestation verify` (workflow `deploy-gcp.yml`, emissor do GitHub, ref `main`, commit do
+job, sem runner self-hosted) antes de implantar. A política `ImageValidatingPolicy` do Kyverno do tx03v2, no
+perfil full, admite só digests do repositório `dx03v2` com essa assinatura. O `deploy-gcp` roda só a
+partir de `main` (o primeiro passo do job recusa outro ref), porque a identidade da assinatura é a do
+workflow em `main`. O digest do manifesto pode mudar na cópia entre registries; a identidade da imagem é
+conferida pelo image ID, e a atestação protege o digest final do Artifact Registry.
 
 
 ## Aula: provar que o gate bloqueia

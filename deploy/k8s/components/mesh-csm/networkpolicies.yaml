@@ -1,0 +1,138 @@
+# Network edges that the sidecar mesh adds on top of the base and gcp policies (enforced by GKE
+# Dataplane V2). Between meshed pods the mTLS traffic travels on the application port, so web -> api:3000
+# and the load balancer ranges keep their policies; what changes is who else needs a path.
+#
+# 1. The sidecars reach the managed control plane, the Mesh CA and the token service, which are Google
+#    APIs and not in-cluster Services, so every pod of the namespace (all are injected) needs TCP 443 to
+#    a public address, and the GKE metadata server (Dataplane V2: 169.254.169.254, port 80). Private
+#    ranges stay closed. The exact endpoints are not published for NetworkPolicy use: after the first
+#    run, narrow this rule to what the sidecars connect to (docs/RUNBOOK.md).
+# 2. Plaintext sources outside the mesh, each limited to one workload and one port, matching the
+#    port-level PERMISSIVE exceptions of tx03v2: the Collector's synthetic probe on the health
+#    endpoints (the AuthorizationPolicies of tx03v2 restrict it to /healthz and /readyz).
+# 3. The exercise: the allowed client and the intruder reach the demo backends on the application port
+#    (the refusal of the intruder must come from the identity policy, not from the network); the
+#    demo backends accept only those two clients.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: mesh-sidecar-egress
+spec:
+  podSelector: {}
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.0.0.0/8
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+      ports:
+        - protocol: TCP
+          port: 443
+    - to:
+        - ipBlock:
+            cidr: 169.254.169.254/32
+      ports:
+        - protocol: TCP
+          port: 80
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: web-ingress-from-collector
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: web
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: observability
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: opentelemetry-collector
+      ports:
+        - protocol: TCP
+          port: 8080
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: api-ingress-from-collector
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: api
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: observability
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: opentelemetry-collector
+      ports:
+        - protocol: TCP
+          port: 3000
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: mesh-demo-ingress
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: mesh-demo
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: mesh-probe
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: mesh-intruder
+      ports:
+        - protocol: TCP
+          port: 3000
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: mesh-probe-egress
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: mesh-probe
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: mesh-demo
+      ports:
+        - protocol: TCP
+          port: 3000
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: mesh-intruder-egress
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: mesh-intruder
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: mesh-demo
+      ports:
+        - protocol: TCP
+          port: 3000

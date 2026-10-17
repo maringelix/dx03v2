@@ -1,9 +1,12 @@
-# Contrato tx03v2 <-> dx03v2 — versão 3 (2026-10-16)
+# Contrato tx03v2 <-> dx03v2 — versão 4 (2026-10-17)
 
-Versão 3: o perfil `full` registra no Argo CD a Application `dx03v2`, que acompanha a branch
-`gitops/gcp`; a identidade de deploy pode pedir refresh somente dessa Application. A versão 2
-(2026-10-14) adicionou o OpenTelemetry Collector da camada de plataforma (namespace `observability`,
-traces para o Cloud Trace). A versão 1 (2026-10-11) não tinha traces.
+Versão 4 (R8): três chaves novas no parâmetro (`dns/hostname`, `dns/certificate-map`, `mesh/management`),
+HTTPS com certificado gerenciado e redirect HTTP no perfil `full`, Cloud Service Mesh gerenciado (sidecars só
+no namespace do app) e a atestação de promoção que a admissão do Kyverno exige. Versão 3: o perfil `full`
+registra no Argo CD a Application `dx03v2`, que acompanha a branch `gitops/gcp`; a identidade de deploy
+pode pedir refresh somente dessa Application. A versão 2 (2026-10-14) adicionou o OpenTelemetry Collector
+da camada de plataforma (namespace `observability`, traces para o Cloud Trace). A versão 1 (2026-10-11)
+não tinha traces.
 
 Interface entre a infraestrutura (`tx03v2`) e a aplicação (este repositório), na parte que o app usa.
 A fonte da verdade é o
@@ -15,11 +18,11 @@ repositórios e incremento da versão.
 
 | O quê | Onde | Status |
 |---|---|---|
-| Nomes de Services, portas, probes, Secrets, ConfigMap, Gateway (classe, `NamedAddress`, listener), HTTPRoute (rotas), HealthCheckPolicies, GCPBackendPolicies, ExternalSecrets, HPA, NetworkPolicies (faixas do load balancer, `/32` do Cloud SQL, cache DNS do nó), `TRUST_PROXY_HOPS=2`, labels, só tipos que a Role `dx03v2-deployer` pode escrever | check `contract-app` (`scripts/check-manifests.mjs` sobre os overlays renderizados `gcp` e `gcp-waf`) | `verificado localmente` |
+| Nomes de Services, portas, probes, Secrets, ConfigMap, Gateway (classe, `NamedAddress`, listener), HTTPRoute (rotas), HealthCheckPolicies, GCPBackendPolicies, ExternalSecrets, HPA, NetworkPolicies (faixas do load balancer, `/32` do Cloud SQL, cache DNS do nó), `TRUST_PROXY_HOPS=2`, labels, Istio `VirtualService`/`DestinationRule`/`AuthorizationPolicy` do perfil `full`, só tipos que a Role `dx03v2-deployer` pode escrever | check `contract-app` (`scripts/check-manifests.mjs` sobre os overlays renderizados `gcp`, `gcp-waf`, `gcp-full`, `gcp-waf-full` e `local-platform`) | `verificado localmente` |
 | Endpoint OTLP da versão 2 no ConfigMap da API e NetworkPolicy só até o Collector (namespace `observability`, porta 4318) | check `contract-app` | `verificado localmente` |
 | Manifests válidos para Kubernetes 1.36, para a Gateway API v1.5.0 standard (a versão que a GKE serve), para `networking.gke.io/v1` (HealthCheckPolicy, GCPBackendPolicy) e para o CRD `ExternalSecret` (`external-secrets.io/v1`) | checks `crd-schemas` e `kubeconform` (estrito) | `verificado localmente` |
 | Formatos dos parâmetros dos overlays (imagens do Artifact Registry com o SHA de 40 caracteres, nome do endereço, política do Cloud Armor ou `none`, exatamente as duas faixas do load balancer, IP RFC 1918 do endpoint do Cloud SQL); valores errados, desconhecidos ou ausentes são recusados | `k8s_validate_params` em `scripts/lib/k8s.sh`, provado por `contract-app` (10 entradas ruins recusadas) | `verificado localmente` |
-| O deploy lê exatamente as 15 chaves abaixo do parâmetro `tx03v2-lab-contract`, confere os valores fixos (os mesmos nomes dos manifests), confia só na raiz do Cloud SQL do contrato, aplica `gcp-waf` ou `gcp`, usa o endpoint DNS e chama o `gcloud` só para leitura | check `contract-app` (sobre `scripts/deploy-gcp.sh`) | `verificado localmente` |
+| O deploy lê exatamente as 18 chaves abaixo do parâmetro `tx03v2-lab-contract`, confere os valores fixos (os mesmos nomes dos manifests), confia só na raiz do Cloud SQL do contrato, aplica `gcp-waf` ou `gcp` (`-full` com `PLATFORM_PROFILE=full`), usa o endpoint DNS e chama o `gcloud` só para leitura | check `contract-app` (sobre `scripts/deploy-gcp.sh`) | `verificado localmente` |
 | Valores do parâmetro conferidos no cluster de verdade: projeto = `GCP_PROJECT_ID`, repositório `<region>-docker.pkg.dev/<project>/dx03v2`, `db/endpoint-ip` dentro de `nodes-subnet-cidr`, preflight de API groups e RBAC, Gateway programado no endereço `gateway/address` | `scripts/deploy-gcp.sh` falha antes de construir ou aplicar qualquer coisa (exercitado offline com CLIs simulados, `docs/HARNESS.md`) | `não executado em nuvem (v2)` |
 | Comportamento real no Google Cloud | `docs/RUNBOOK.md` | `não executado em nuvem (v2)` |
 
@@ -47,6 +50,8 @@ conter (o check `contract-app` recusa qualquer outro tipo, e o deploy confere ca
   pods, pods/log, events, endpoints → get, list, watch; secrets → get, list, watch (o ESO escreve
   os segredos; o deployer nunca os escreve)
 - `networking.k8s.io`: networkpolicies → CRUD completo
+- `networking.istio.io`: destinationrules, virtualservices; `security.istio.io`: authorizationpolicies → CRUD completo,
+  só no namespace `dx03v2` (exercício de malha do perfil `full`; sem os CRDs do Istio a regra é inerte)
 - `gateway.networking.k8s.io`: gateways, httproutes → CRUD completo
 - `networking.gke.io`: healthcheckpolicies, gcpbackendpolicies → CRUD completo (as
   GCPBackendPolicies são escritas pelo `gcp-waf` e apagadas pelo `gcp`, então o deploy sempre exige
@@ -57,13 +62,21 @@ conter (o check `contract-app` recusa qualquer outro tipo, e o deploy confere ca
 GatewayClasses têm escopo de cluster e ficam fora da Role: o deploy confere a classe quando consegue
 lê-la; senão, a condição `Programmed` do Gateway é a prova.
 
-Com o perfil `full` do `tx03v2`, o Argo CD é o dono dos manifests do app. O deploy configura o caminho,
-as imagens e os valores reais em `spec.source.kustomize` da Application `dx03v2` no namespace `argocd`;
-em seguida, publica o commit do app e `params.env` copiado do exemplo na branch `gitops/gcp` e pede
-refresh ao Argo CD. O app pai ignora somente `spec.source.path` e `spec.source.kustomize` dessa
-Application e usa `RespectIgnoreDifferences=true`. Para um cluster sem Argo CD, execute o script
-localmente com `DEPLOY_MODE=push`; o workflow do Actions sempre usa GitOps. A branch pública não
-recebe IDs reais da conta ou do projeto.
+O workflow `deploy-gcp` aceita `platform_profile=core|full` e `deploy_mode=auto|gitops|push`. `auto` escolhe
+GitOps quando a Application `dx03v2` existe e faz apply direto quando ela não existe; erros de permissão ou
+de conexão falham fechados. Com GitOps (perfil `full` do `tx03v2`, em que o Argo CD é o dono dos manifests do
+app), o deploy configura o caminho, as imagens e os valores reais (endereço, faixas, endpoint do Cloud SQL,
+hostname e Certificate Map) em `spec.source.kustomize` da Application `dx03v2` no namespace `argocd`; em
+seguida, publica o commit do app e `params.env` copiado do exemplo na branch `gitops/gcp` e pede refresh ao
+Argo CD. O app pai ignora somente `spec.source.path` e `spec.source.kustomize` dessa Application e usa
+`RespectIgnoreDifferences=true`. Com `push` (cluster sem Argo CD, ou o script local com `DEPLOY_MODE=push`) o
+deploy aplica o overlay direto. A branch pública não recebe IDs reais da conta ou do projeto.
+
+No perfil `full` o workflow roda a partir de `main`: promove os digests verificados para o Artifact Registry
+(sem rebuild), atesta cada digest promovido (predicado
+`https://github.com/maringelix/tx00v2/attestations/promoted-image/v1`, assinatura sem chave com a identidade do
+`deploy-gcp.yml` em `main`), confere a atestação com `gh attestation verify` e só então implanta. A política
+`ImageValidatingPolicy` do Kyverno do `tx03v2` admite apenas essa assinatura.
 
 ## Workload Identity Federation do GitHub
 
@@ -81,7 +94,8 @@ variável `GCP_WORKLOAD_IDENTITY_PROVIDER`
 Papéis de `dx03v2-gha-deploy` (concedidos pelo root do lab do tx03v2):
 `roles/artifactregistry.writer` no repositório `dx03v2`; `roles/container.clusterViewer` no projeto
 (credenciais do cluster e acesso pelo endpoint DNS); `roles/parametermanager.parameterAccessor` no
-projeto (ler o parâmetro do contrato). Nada no Secret Manager. Acesso Kubernetes só pela RoleBinding
+projeto (ler o parâmetro do contrato). Nada no Secret Manager. A atestação de promoção é gravada no mesmo
+repositório (`roles/artifactregistry.writer`), sem papel novo. Acesso Kubernetes só pela RoleBinding
 acima. Os `app_deployer_members` (deploy a partir de um laptop, `user:<e-mail>` ou
 `serviceAccount:<e-mail>`; `group:` é recusado) recebem os mesmos três papéis e entram na RoleBinding.
 
@@ -90,7 +104,7 @@ acima. Os `app_deployer_members` (deploy a partir de um laptop, `user:<e-mail>` 
 Parâmetro global com formato `JSON`, lido pelo alias `latest`:
 `gcloud parametermanager parameters versions render latest --parameter=tx03v2-lab-contract
 --location=global --project=<GCP_PROJECT_ID>`. Nenhum valor é segredo, mas o deploy mascara no
-GitHub Actions o projeto e o e-mail da conta de serviço. O JSON tem exatamente estas 15 chaves
+GitHub Actions o projeto e o e-mail da conta de serviço. O JSON tem exatamente estas 18 chaves
 (valores string); o deploy recusa uma chave a mais, uma a menos ou um valor vazio:
 
 | Chave | Valor | Uso no dx03v2 |
@@ -107,7 +121,10 @@ GitHub Actions o projeto e o e-mail da conta de serviço. O JSON tem exatamente 
 | `app/admin-token-secret-name` | `tx03v2-lab-app-admin-token` | conferida contra o ExternalSecret `app-secrets` |
 | `eso/cluster-secret-store` | `gcp-secret-manager` | conferida contra o `secretStoreRef` dos ExternalSecrets |
 | `gateway/address-name` | `tx03v2-lab-gateway` | `spec.addresses` do Gateway, `type: NamedAddress` (`GATEWAY_ADDRESS_NAME`) |
-| `gateway/address` | o IPv4 desse endereço | conferida (formato); o Gateway programado precisa ter esse endereço; URL do smoke test |
+| `gateway/address` | o IPv4 desse endereço | conferida (formato); o Gateway programado precisa ter esse endereço; URL do smoke test no `core` |
+| `dns/hostname` | subdomínio público do app ou `disabled` | `DNS_HOSTNAME`; obrigatório no perfil `full`, aplicado aos listeners do Gateway e às rotas HTTPS/redirect; URL do smoke test no `full` |
+| `dns/certificate-map` | nome do Certificate Map (`tx03v2-lab-app`) ou `disabled` | `CERT_MAP`; anotação `networking.gke.io/certmap` do Gateway; `disabled` se e só se `dns/hostname` for `disabled` |
+| `mesh/management` | `managed` ou `disabled` | o perfil `full` exige `managed` (Cloud Service Mesh gerenciado, sidecars só no namespace `dx03v2`) |
 | `waf/security-policy` | `tx03v2-lab-waf`, ou `none` com `enable_waf = false` no tx03v2 | GCPBackendPolicies `api` e `web` (`WAF_SECURITY_POLICY`, overlay `gcp-waf`); com `none`, overlay `gcp` e as políticas antigas são apagadas |
 | `deploy/service-account` | e-mail de `dx03v2-gha-deploy` | conferida: `dx03v2-gha-deploy@<GCP_PROJECT_ID>.iam.gserviceaccount.com` |
 
@@ -157,8 +174,11 @@ GitHub Actions o projeto e o e-mail da conta de serviço. O JSON tem exatamente 
   End (teste de integração `rate-limit`).
 - Services: `api` (porta 3000 http, 9464 métricas), `web` (porta 8080).
 - Tráfego (só Google Cloud): Gateway `dx03v2` (classe `gke-l7-global-external-managed`,
-  `spec.addresses` com `type: NamedAddress` e o valor `gateway/address-name`), listener HTTP na porta
-  80 (HTTPS `planejado`); HTTPRoute `dx03v2`: `/api` → `api:3000`, `/` → `web:8080`;
+  `spec.addresses` com `type: NamedAddress` e o valor `gateway/address-name`). O `core` usa só o listener HTTP
+  na porta 80. O `full` serve HTTPS na porta 443 com o certificado do Certificate Map de `dns/certificate-map`
+  (anotação `networking.gke.io/certmap`, listener sem bloco `tls`, sem Secret) para o hostname de
+  `dns/hostname`, e o listener HTTP só redireciona com 301 para o mesmo hostname e caminho (HTTPRoute
+  `dx03v2-http-redirect`). HTTPRoute `dx03v2`: `/api` → `api:3000`, `/` → `web:8080`;
   HealthCheckPolicies `web` (`/healthz`, porta 8080) e `api` (`/readyz`, porta 3000);
   GCPBackendPolicies `api` e `web` com `securityPolicy` = `waf/security-policy` (omitidas com `none`).
 - Cloud Armor (do tx03v2): regras pré-configuradas `sqli-v33-stable` e `xss-v33-stable` em
@@ -167,7 +187,20 @@ GitHub Actions o projeto e o e-mail da conta de serviço. O JSON tem exatamente 
   limite de taxa, se existir, precisa ser >= 300 requisições por minuto por cliente.
 - NetworkPolicies no Google Cloud: entrada em web:8080 e api:3000 só a partir de `lb-source-ranges`;
   saída da api para `db/endpoint-ip`/32:5432; DNS (base) e saída para o cache DNS do nó
-  `169.254.20.10/32:53` (NodeLocal DNSCache do Autopilot).
+  `169.254.20.10/32:53` (NodeLocal DNSCache do Autopilot). No `full`, mais: saída de todo pod para endereços
+  públicos na 443 (os sidecars falam com o control plane gerenciado, a Mesh CA e o servidor de metadados
+  `169.254.169.254:80`; faixas privadas continuam fechadas), entrada do probe sintético do Collector só em
+  web:8080 e api:3000, e a troca entre os pods do exercício de malha (`mesh-probe`, `mesh-intruder`,
+  `mesh-stable`, `mesh-canary`) só na 3000.
+- Malha de serviço no `full` (`components/mesh-csm`): o Cloud Service Mesh gerenciado injeta sidecars só no
+  namespace `dx03v2`, com mTLS STRICT e autorização por identidade do `tx03v2` (domínio de confiança
+  `<project>.svc.id.goog`; principais `*/ns/dx03v2/sa/<conta>`). O exercício do app tem dois backends da
+  mesma imagem da API (`mesh-stable` e `mesh-canary`), um `VirtualService` com 80/20 em `/variant`, no máximo
+  dois retries (`5xx`, 1 s por tentativa) em `/fail`, um `DestinationRule` que ejeta o canário após três 5xx
+  seguidos e uma `AuthorizationPolicy` que só aceita a identidade `mesh-probe` (o `mesh-intruder` recebe 403).
+  Cada pod pede um sidecar pequeno (`sidecar.istio.io/proxyCPU: 50m`, memória 96 MiB, limite de 192 MiB) e a
+  api exclui o endpoint do Cloud SQL do proxy (`traffic.sidecar.istio.io/excludeOutboundIPRanges`) porque o
+  initContainer `migrate` conecta antes do sidecar subir e o banco está fora da malha.
 - Cloud SQL for PostgreSQL 17 (edição Enterprise), porta 5432, só por Private Service Connect,
   `ssl_mode = ENCRYPTED_ONLY`, `server_ca_mode = GOOGLE_MANAGED_CAS_CA`.
 

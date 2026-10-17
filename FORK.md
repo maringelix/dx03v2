@@ -82,12 +82,16 @@ The release uses two manual workflows, both dispatched from `main`:
    and creates SBOMs and Sigstore attestations.
 2. Run `deploy-gcp` with `release_run_id` set to that publisher run. The workflow re-verifies the CI,
    image digests, SBOM hashes and attestations before the `lab` environment approval. After approval,
-   it uses Workload Identity Federation and promotes those exact digests to Artifact Registry, then
-   deploys by Argo CD GitOps.
+   it uses Workload Identity Federation, promotes those exact digests to Artifact Registry (no rebuild),
+   attests the promoted digests and deploys them.
 
-The normal workflow requires the `tx03v2` `full` profile and the `dx03v2` Argo CD Application. It does
-not rebuild or publish a different image. A direct `DEPLOY_MODE=push` run is available for a deliberate
-manual exercise without Argo CD; see `docs/RUNBOOK.md` and use the same verified release bundle.
+Choose `platform_profile=core|full` to match the tx03v2 installation, and `deploy_mode=auto|gitops|push`:
+`auto` uses Argo CD when the `dx03v2` Application exists and otherwise applies the overlay directly. The
+full profile serves HTTPS on your delegated domain and enables the managed-mesh exercise; run it from
+`main`, because the Kyverno policy of tx03v2 admits only the promotion signed by your `deploy-gcp.yml` on
+`main`. The workflow never rebuilds or publishes a different image. A manual run of the script with
+`DEPLOY_MODE=push` is available for a deliberate exercise; see `docs/RUNBOOK.md` and use the same
+verified release bundle (it does not create the promotion signature).
 
 ## 8-9. Report the run and keep the fork up to date
 

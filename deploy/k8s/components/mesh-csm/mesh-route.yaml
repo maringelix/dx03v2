@@ -1,0 +1,64 @@
+# Traffic management of the service-mesh exercise on the managed Cloud Service Mesh (Istio sidecars).
+# The caller's own sidecar applies the weights, the bounded retry and the ejection: there is no
+# waypoint on GKE Autopilot. Hosts are the Services of components/mesh-demo.
+apiVersion: networking.istio.io/v1
+kind: VirtualService
+metadata:
+  name: mesh-demo
+spec:
+  hosts:
+    - mesh-demo.dx03v2.svc.cluster.local
+  http:
+    - name: weighted-canary
+      match:
+        - uri:
+            exact: /variant
+      timeout: 5s
+      route:
+        - destination:
+            host: mesh-stable.dx03v2.svc.cluster.local
+            port:
+              number: 3000
+          weight: 80
+        - destination:
+            host: mesh-canary.dx03v2.svc.cluster.local
+            port:
+              number: 3000
+          weight: 20
+    - name: bounded-retries
+      match:
+        - uri:
+            exact: /fail
+      timeout: 6s
+      retries:
+        attempts: 2
+        perTryTimeout: 1s
+        retryOn: 5xx
+      route:
+        - destination:
+            host: mesh-canary.dx03v2.svc.cluster.local
+            port:
+              number: 3000
+    - name: stable-fallback
+      route:
+        - destination:
+            host: mesh-stable.dx03v2.svc.cluster.local
+            port:
+              number: 3000
+---
+apiVersion: networking.istio.io/v1
+kind: DestinationRule
+metadata:
+  name: mesh-canary
+spec:
+  host: mesh-canary.dx03v2.svc.cluster.local
+  trafficPolicy:
+    connectionPool:
+      http:
+        http1MaxPendingRequests: 8
+        maxRequestsPerConnection: 8
+    outlierDetection:
+      consecutive5xxErrors: 3
+      interval: 2s
+      baseEjectionTime: 30s
+      maxEjectionPercent: 100

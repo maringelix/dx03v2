@@ -40,8 +40,15 @@ function image(value, key) {
 }
 
 const [cloud, overlay, actualFile, exampleFile] = process.argv.slice(2);
-if (cloud !== 'gcp' || !['gcp', 'gcp-waf'].includes(overlay) || !actualFile || !exampleFile) {
-  fail('usage: render-gitops-application.mjs gcp <gcp|gcp-waf> <actual params.env> <params.example.env>');
+if (
+  cloud !== 'gcp' ||
+  !['gcp', 'gcp-waf', 'gcp-full', 'gcp-waf-full'].includes(overlay) ||
+  !actualFile ||
+  !exampleFile
+) {
+  fail(
+    'usage: render-gitops-application.mjs gcp <gcp|gcp-waf|gcp-full|gcp-waf-full> <actual params.env> <params.example.env>',
+  );
 }
 
 const actual = readEnv(actualFile);
@@ -74,7 +81,26 @@ for (const name of ['web-ingress-from-lb', 'api-ingress-from-lb']) {
   addPatch('NetworkPolicy', name, '/spec/ingress/0/from/1/ipBlock/cidr', ranges[1]);
 }
 addPatch('NetworkPolicy', 'api-egress-to-cloudsql', '/spec/egress/0/to/0/ipBlock/cidr', `${endpoint}/32`);
-if (overlay === 'gcp-waf') {
+if (overlay.endsWith('-full')) {
+  // The public hostname and the certificate map of the fork owner, and the Cloud SQL address that bypasses the sidecar.
+  const hostname = required(actual, 'DNS_HOSTNAME');
+  const certificateMap = required(actual, 'CERT_MAP');
+  if (hostname === 'disabled' || certificateMap === 'disabled') {
+    fail(`${overlay} requires DNS_HOSTNAME and CERT_MAP other than disabled`);
+  }
+  addPatch('Gateway', 'dx03v2', '/metadata/annotations/networking.gke.io~1certmap', certificateMap);
+  addPatch('Gateway', 'dx03v2', '/spec/listeners/0/hostname', hostname);
+  addPatch('Gateway', 'dx03v2', '/spec/listeners/1/hostname', hostname);
+  addPatch('HTTPRoute', 'dx03v2', '/spec/hostnames/0', hostname);
+  addPatch('HTTPRoute', 'dx03v2-http-redirect', '/spec/hostnames/0', hostname);
+  addPatch(
+    'Deployment',
+    'api',
+    '/spec/template/metadata/annotations/traffic.sidecar.istio.io~1excludeOutboundIPRanges',
+    `${endpoint}/32`,
+  );
+}
+if (overlay === 'gcp-waf' || overlay === 'gcp-waf-full') {
   const policy = required(actual, 'WAF_SECURITY_POLICY');
   if (policy === 'none') fail('gcp-waf requires WAF_SECURITY_POLICY other than none');
   addPatch('GCPBackendPolicy', 'api', '/spec/default/securityPolicy', policy);

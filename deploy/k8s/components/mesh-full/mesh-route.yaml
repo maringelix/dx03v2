@@ -1,0 +1,61 @@
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: mesh-demo
+spec:
+  parentRefs:
+    - group: ''
+      kind: Service
+      name: mesh-demo
+      port: 3000
+  rules:
+    - name: weighted-canary
+      matches:
+        - path:
+            type: Exact
+            value: /variant
+      timeouts:
+        request: 5s
+        backendRequest: 2s
+      backendRefs:
+        - name: mesh-stable
+          port: 3000
+          weight: 80
+        - name: mesh-canary
+          port: 3000
+          weight: 20
+    - name: bounded-retries
+      matches:
+        - path:
+            type: Exact
+            value: /fail
+      timeouts:
+        request: 6s
+        backendRequest: 1s
+      retry:
+        attempts: 2
+        codes: [500, 502, 503, 504]
+      backendRefs:
+        - name: mesh-canary
+          port: 3000
+    - name: stable-fallback
+      backendRefs:
+        - name: mesh-stable
+          port: 3000
+---
+apiVersion: networking.istio.io/v1
+kind: DestinationRule
+metadata:
+  name: mesh-canary
+spec:
+  host: mesh-canary.dx03v2.svc.cluster.local
+  trafficPolicy:
+    connectionPool:
+      http:
+        http1MaxPendingRequests: 8
+        maxRequestsPerConnection: 8
+    outlierDetection:
+      consecutive5xxErrors: 3
+      interval: 2s
+      baseEjectionTime: 30s
+      maxEjectionPercent: 100
