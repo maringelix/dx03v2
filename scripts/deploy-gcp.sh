@@ -60,6 +60,9 @@ CONTRACT_ADDRESS_NAME=tx03v2-lab-gateway
 CONTRACT_LB_SOURCE_RANGES=35.191.0.0/16,130.211.0.0/22
 CONTRACT_WAF_POLICY=tx03v2-lab-waf
 CONTRACT_DEPLOY_ACCOUNT=dx03v2-gha-deploy
+# shellcheck source=scripts/lib/region-target.sh
+source "$REPO_ROOT/scripts/lib/region-target.sh"
+select_region_target "${LAB_TARGET:-primary}"
 GATEWAY_CLASS=gke-l7-global-external-managed
 # Contract: the regional bundles of the shared Cloud SQL CAs (GOOGLE_MANAGED_CAS_CA) are public.
 # The bundle must hold exactly one self-signed root, with this SHA-256, and only CAs issued by it.
@@ -546,6 +549,8 @@ write_params() {
     echo "WAF_SECURITY_POLICY=$(param waf/security-policy)"
     echo "LB_SOURCE_RANGES=$(param lb-source-ranges)"
     echo "DB_ENDPOINT_IP=$(param db/endpoint-ip)"
+    echo "DB_SECRET_NAME=$(param db/secret-name)"
+    echo "ADMIN_TOKEN_SECRET_NAME=$(param app/admin-token-secret-name)"
     echo "DNS_HOSTNAME=$DNS_HOSTNAME"
     echo "CERT_MAP=$CERT_MAP"
   } >"$params"
@@ -608,7 +613,7 @@ publish_gitops_revision() {
     "${API_IMAGE##*@}" "${WEB_IMAGE##*@}")"
   [[ "$GITOPS_REV" =~ ^[0-9a-f]{40}$ ]] || die "GitOps branch push returned no commit SHA"
   kubectl -n argocd annotate application dx03v2 argocd.argoproj.io/refresh=normal --overwrite >/dev/null
-  log "published origin/gitops/gcp at ${GITOPS_REV:0:7}"
+  log "published origin/$GITOPS_BRANCH at ${GITOPS_REV:0:7}"
 }
 
 wait_for_gitops() {
@@ -728,7 +733,7 @@ main() {
   section "ConfigMap cloudsql-ca (Cloud SQL CA bundle, contract root checked)"
   create_cloudsql_ca
   if [[ "$DEPLOY_MODE" == gitops ]]; then
-    section "publish and sync GitOps revision gitops/gcp"
+    section "publish and sync GitOps revision $GITOPS_BRANCH"
     render_gitops_source
     configure_gitops_application
     publish_gitops_revision

@@ -8,6 +8,11 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- Contract v5 regional deployment selection: secondary cluster, private endpoint and Secret
+  Manager references, independent GitOps branch and registry promotion. Offline tests render
+  the secondary manifests and refuse arbitrary runtime names. Release verification requires
+  the source CI continuity job; DNS cutover and database promotion remain explicit operations.
+
 - R9 independent Docker A/B application recovery: verified backup/configuration, TLS, API database
   reconnect without restart, live-writer promotion refusal, corrupt archive rejection, primary
   disk destruction, measured RPO/RTO and fenced failback that preserves new secondary writes.

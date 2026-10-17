@@ -1,4 +1,12 @@
-# Contrato tx03v2 <-> dx03v2 — versão 4 (2026-10-17)
+# Contrato tx03v2 <-> dx03v2 — versão 5 (2026-10-17)
+
+Versão 5 (R9) conserva as 18 chaves e adiciona o contrato independente
+`tx03v2-lab-dr-contract`. `LAB_TARGET=primary|secondary` seleciona somente um dos dois
+runtimes criados pela IaC. O secundário usa seus próprios cluster, VPC, PSC, registry
+e segredos `tx03v2-lab-dr-*`; os manifests e overrides do Argo CD recebem esses nomes.
+As branches `gitops/gcp` e `gitops/gcp-dr` são independentes: um deploy de DR não
+redireciona a reconciliação do primário. O mapa TLS e o WAF são recursos globais do
+projeto. O deploy não promove banco nem altera DNS automaticamente.
 
 Versão 4 (R8): três chaves novas no parâmetro (`dns/hostname`, `dns/certificate-map`, `mesh/management`),
 HTTPS com certificado gerenciado e redirect HTTP no perfil `full`, Cloud Service Mesh gerenciado (sidecars só

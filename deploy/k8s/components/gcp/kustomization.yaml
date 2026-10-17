@@ -95,6 +95,26 @@ replacements:
   - source:
       kind: ConfigMap
       name: deploy-params
+      fieldPath: data.DB_SECRET_NAME
+    targets:
+      - select:
+          kind: ExternalSecret
+          name: db-credentials
+        fieldPaths:
+          - spec.data.*.remoteRef.key
+  - source:
+      kind: ConfigMap
+      name: deploy-params
+      fieldPath: data.ADMIN_TOKEN_SECRET_NAME
+    targets:
+      - select:
+          kind: ExternalSecret
+          name: app-secrets
+        fieldPaths:
+          - spec.data.0.remoteRef.key
+  - source:
+      kind: ConfigMap
+      name: deploy-params
       fieldPath: data.API_IMAGE
     targets:
       - select:

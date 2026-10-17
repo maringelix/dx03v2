@@ -55,3 +55,25 @@ Se a origem não puder ser isolada, pare a promoção e escale ao operador.
 Não copie o arquivo `.env` local para cloud. Segredos regionais ficam no Secret
 Manager e workload identities da região. A promoção publica os digests já
 assinados no registry da região recuperada; não deve reconstruir o código.
+
+## Deploy da recuperação gerenciada
+
+Com o perfil `dr` do TX aplicado e o banco promovido **depois do fencing**, instale
+a plataforma do secundário com `LAB_TARGET=secondary`. No workflow `deploy-gcp`,
+selecione `target=secondary`, a mesma release assinada e o perfil de plataforma
+instalado. O script lê `tx03v2-lab-dr-contract`, obtém o kubeconfig do cluster
+`tx03v2-lab-dr`, promove os digests no registry da região e publica `gitops/gcp-dr`.
+Uma referência arbitrária de cluster/contrato é recusada pelo teste `region-target`.
+
+Verifique inicialmente o endereço reservado do secundário usando resolução local
+do hostname TLS. Só após consultas, escrita de prova e aceite de dados, altere
+`LAB_ACTIVE_REGION=secondary` no TX e revise/aplique o plano de DNS. Esse input
+exige o perfil `dr`; ele não faz fencing nem promoção por conta própria. Registre
+a hora da última escrita aceita no primário, lag da réplica e primeira escrita
+aceita no secundário para medir RPO/RTO da cloud.
+
+O CI de publicação/deploy também exige sucesso de `continuity` na origem da release.
+Para failback, reconstrua a origem a partir do banco promovido, sincronize, congele
+escritas, faça fencing do secundário e só então retorne o DNS e a branch de deploy
+do primário. Não reaplique uma réplica Terraform já promovida sem reconciliar seu
+estado e revisar o plano; isso pode causar substituição ou perda de dados.
