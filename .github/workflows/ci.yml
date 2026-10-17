@@ -301,6 +301,8 @@ jobs:
 
       - run: make e2e-platform
         env:
+          LOCAL_TOPOLOGY: ha
+          LOCAL_FINOPS: '1'
           E2E_SKIP_BUILD: '1'
           E2E_DIAGNOSTICS_DIR: ${{ runner.temp }}/platform-diagnostics
           # Optional repository variable of a fork: its own tx03v2 (FORK.md). Empty: the original.

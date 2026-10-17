@@ -163,3 +163,7 @@ temporários. No repositório ficam só `.tools/`, `node_modules/` e `*/dist/` (
 | `FAIL kind-e2e` | rollout, smoke ou sonda falhou | leia o resumo e os diagnósticos (`E2E_DIAGNOSTICS_DIR`, artefato `e2e-diagnostics` no CI); `KEEP_CLUSTER=1 make e2e` para investigar |
 | `FAIL gitleaks` | segredo ou falso positivo | remova o segredo e gire a credencial; placeholders devem ter cara de placeholder (por exemplo SHA ou GUID só com zeros). Antes do primeiro commit o check examina os arquivos visíveis ao git |
 | `FAIL policy-identifiers` | projeto, número, e-mail, GUID ou IP real | use `tx03v2-lab-example`, `000000000000`, `you@example.com`, `203.0.113.10` |
+
+## R10: capacidade e FinOps
+
+Veja [Capacidade e SLO](FINOPS.md) para carga limitada, HPA up/down, PDB/drain, rightsizing, pool PostgreSQL e showback. Prova Docker em Actions; nada executado na nuvem (v2).
