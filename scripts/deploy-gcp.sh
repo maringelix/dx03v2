@@ -686,6 +686,12 @@ wait_for_gateway() {
 
 smoke() {
   local status=0 code location
+  if [[ "$LAB_TARGET" == secondary && "$PLATFORM_PROFILE" == full ]]; then
+    # Public DNS may still point to the old region. Check B directly with TLS hostname verification.
+    bash "$REPO_ROOT/scripts/regional-smoke.sh" "$DNS_HOSTNAME" "$GATEWAY_ADDRESS" "$GIT_SHA" \
+      | tee "$WORK_DIR/smoke.txt"
+    return
+  fi
   if [[ "$PLATFORM_PROFILE" == full ]]; then
     BASE="https://$DNS_HOSTNAME"
     code="$(curl -sS -m 15 -o /dev/null -w '%{http_code}' "http://$DNS_HOSTNAME/api/healthz")" ||
