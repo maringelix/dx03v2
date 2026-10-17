@@ -1265,6 +1265,7 @@ register_checks() {  register static tool-versions check_tool_versions
   register static policy-cloud check_policy_cloud
   register static deploy-mode check_deploy_mode
   register static capacity-client 'node --test e2e/capacity.test.mjs'
+  register static cost-labels 'bash scripts/tests/cost-labels.sh'
   register static regional-smoke 'bash scripts/tests/regional-smoke.sh'
   register static promotion-statements check_promotion_statements
   register static trivyignore-policy check_trivyignore_policy

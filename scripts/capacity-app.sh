@@ -6,6 +6,8 @@ source "$(dirname "${BASH_SOURCE[0]}")/lib/common.sh"
 require_cmd kubectl docker jq
 [[ -f "${KUBECONFIG:-}" && "$(kubectl config current-context)" == kind-tx03v2-local ]] ||
   die 'app capacity drill requires the owned kind lab kubeconfig'
+[[ "$(docker inspect tx03v2-local-db --format '{{index .Config.Labels "tx03v2.lab"}}')" == local ]] ||
+  die 'refusing to lock a database not owned by this local lab'
 NS=dx03v2 PROBE=dx03v2-probe NODE='' PAUSED=0
 for item in "configmap/capacity" "resourcequota/capacity"; do
   existing="$(kubectl -n "$PROBE" get "$item" --ignore-not-found -o name)" || die 'cannot inventory probe fixtures'
