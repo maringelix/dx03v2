@@ -123,7 +123,7 @@ start_db() {
     --security-opt no-new-privileges --memory 512m --cpus 1 \
     "$POSTGRES_IMAGE" -c ssl=on -c ssl_cert_file=/tls/server.crt -c ssl_key_file=/tls/server.key >/dev/null
   local i
-  for i in $(seq 1 60); do
+  for ((i = 1; i <= 60; i++)); do
     if docker exec "$RUN_ID-$region-db" pg_isready -h 127.0.0.1 -U dx03v2 -d dx03v2 >/dev/null 2>&1; then return; fi
     sleep 1
   done
@@ -154,7 +154,7 @@ start_app() {
 }
 wait_app() {
   local region=$1 i
-  for i in $(seq 1 60); do
+  for ((i = 1; i <= 60; i++)); do
     if curl -fsS --max-time 3 "${ENDPOINT[$region]}/api/messages" >"$WORK/messages.json"; then return; fi
     sleep 1
   done
