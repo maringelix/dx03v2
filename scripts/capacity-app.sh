@@ -109,7 +109,8 @@ result() {
   done
   kubectl -n "$PROBE" logs "capacity-$name" >"$WORK/$name.json"
   [[ "$phase" == Succeeded ]] || { cat "$WORK/$name.json" >&2; die "capacity $name failed"; }
-  jq -e '.requests >= 20' "$WORK/$name.json" >/dev/null
+  jq -e '.requests >= 20' "$WORK/$name.json" >/dev/null ||
+    die "capacity $name produced no valid load report"
   kubectl -n "$PROBE" delete pod "capacity-$name" --wait=false >/dev/null
 }
 # Pause reconciliation for the bounded imperative experiment; cleanup restores both resources and GitOps.

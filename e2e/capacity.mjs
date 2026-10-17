@@ -1,7 +1,6 @@
 // Read-only bounded HTTPS workload through the real Gateway; no credentials or request bodies logged.
 import https from 'node:https';
 import { performance } from 'node:perf_hooks';
-import { pathToFileURL } from 'node:url';
 
 export function summarize(samples) {
   if (!samples.length) throw new Error('no load samples');
@@ -55,7 +54,8 @@ export async function workload(url, seconds, concurrency) {
   return summarize(samples);
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+// Node resolves ConfigMap symlinks in import.meta.url; argv keeps the mount path.
+if (import.meta.main) {
   try {
     const report = await workload(
       process.env.CAPACITY_URL,
