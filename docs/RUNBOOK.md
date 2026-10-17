@@ -125,22 +125,51 @@ O deploy só aceita uma release que veio do CI de `main`; o workflow não recons
    de CI bem-sucedida para o commit atual de `main`. O workflow verifica os cinco checks exigidos,
    os image IDs, os SBOMs e as attestations antes de publicar os mesmos digests no GHCR.
 2. Rode `deploy-gcp` a partir de `main` e informe em `release_run_id` o ID dessa execução de
-   `publish-images`. O job `verify-release` confere novamente a execução de origem, os cinco checks,
-   os hashes dos SBOMs e as attestations antes do environment `lab`.
+   `publish-images`. Escolha também `platform_profile` (`core` ou `full`, igual ao perfil que o tx03v2
+   instalou) e `deploy_mode` (`auto`, `gitops` ou `push`): `auto` usa GitOps quando encontra a Application
+   `dx03v2` e aplica o overlay direto quando ela não existe; falha de permissão ou de conexão com o Argo CD
+   não é tratada como ausência e interrompe o deploy. O job `verify-release` confere novamente a execução
+   de origem, os cinco checks, os hashes dos SBOMs e as attestations antes do environment `lab`.
 3. Depois da aprovação de `lab`, o job valida as variáveis, baixa e verifica novamente o bundle,
    autentica com Workload Identity Federation e instala `kubectl`, `crane` e gcloud.
-4. `scripts/deploy-gcp.sh` promove os digests assinados do GHCR para o Artifact Registry com `crane`,
-   sem rebuild. Confere que os digests e image IDs coincidem, grava os digests na revisão GitOps e
-   espera Argo CD, ExternalSecrets, rollouts, Gateway e smoke test.
+4. O job promove os digests verificados do GHCR para o Artifact Registry (`scripts/deploy-gcp.sh
+   --promote-only`, com `crane`, sem rebuild), assina com `actions/attest` uma atestação de promoção para
+   cada digest do Artifact Registry (predicado `https://github.com/maringelix/tx00v2/attestations/promoted-image/v1`)
+   e confere a assinatura com `gh attestation verify` (workflow `deploy-gcp.yml`, emissor do GitHub, ref
+   `main`, commit do job).
+5. `scripts/deploy-gcp.sh` roda de novo: lê as 18 chaves do parâmetro de contrato, confere os digests e
+   image IDs, grava os digests na revisão GitOps (ou aplica o overlay) e espera Argo CD, ExternalSecrets,
+   rollouts, Gateway e smoke test. Com `full`, o overlay é `gcp-full` ou `gcp-waf-full`, o smoke test usa
+   HTTPS no hostname do contrato e confere o redirect 301 do HTTP; depois do rollout o script confere que
+   cada pod de `api` e `web` tem o sidecar `istio-proxy` do Cloud Service Mesh gerenciado.
 
-O workflow exige o perfil `full` do tx03v2, a Application `dx03v2` no Argo CD e permissão para
-publicar `gitops/gcp`. A verificação da release não cria nem altera recursos cloud; apenas o job
-protegido `deploy` faz isso. A execução cloud da v2 continua marcada como `não executado em nuvem`.
+O perfil `full` exige a plataforma full do tx03v2 (Cloud Service Mesh gerenciado, Kyverno com a política de
+assinatura, domínio e certificado do tx03v2) e roda a partir de `main`. A verificação da release não cria
+nem altera recursos cloud; apenas o job protegido `deploy` faz isso. A execução cloud da v2 continua
+marcada como `não executado em nuvem`.
 
-O script também oferece `DEPLOY_MODE=push` para aplicar os manifests sem Argo CD. Esse caminho ainda
-exige uma release verificada (`RELEASE_DIR`, `RELEASE_RUN_ID`, `GH_TOKEN`, `GITHUB_REPOSITORY` e
-`GITHUB_ACTOR`) e credenciais cloud próprias; a execução é manual e faturável. Para o fluxo GitOps
-normal, use os dois workflows acima.
+O script também roda de um laptop com `DEPLOY_MODE=push` para aplicar os manifests sem Argo CD. Esse
+caminho ainda exige uma release verificada (`RELEASE_DIR`, `RELEASE_RUN_ID`, `GH_TOKEN`,
+`GITHUB_REPOSITORY` e `GITHUB_ACTOR`) e credenciais cloud próprias; a execução é manual e faturável. No
+perfil `full` use apenas digests que já tenham a atestação de promoção assinada pelo workflow em `main`
+(a execução manual não cria essa assinatura). Para o fluxo normal, use os dois workflows acima.
+
+### Exercício de malha (perfil full)
+
+Depois do deploy, o exercício roda com dois pods avulsos no namespace `dx03v2`, com as contas de serviço
+`mesh-probe` (permitida) e `mesh-intruder` (negada), a imagem da API (`kubectl -n dx03v2 get deployment
+mesh-stable -o jsonpath='{.spec.template.spec.containers[0].image}'`), os rótulos
+`app.kubernetes.io/name=mesh-probe` ou `mesh-intruder` e os argumentos `dist/mesh-probe.js` com
+`MESH_PROBE_MODE=allowed` ou `intruder` (`MESH_PROBE_TARGET` padrão `http://mesh-demo:3000`). Com sidecar o
+pod não termina sozinho: leia a saída com `kubectl logs` (`MESH_PROBE_RESULT ...` ou
+`MESH_PROBE_DENIED status=403`) e apague o pod. O mesmo exercício roda no lab local (ambient) em
+`make e2e-platform`, sonda `mesh`, e é o que o CI prova; na nuvem ele não foi executado.
+
+Se os pods ficarem sem prontidão logo após o primeiro deploy do perfil `full`, olhe primeiro o
+`istio-proxy`: a NetworkPolicy `mesh-sidecar-egress` libera só a 443 para endereços públicos e o
+servidor de metadados, e os endereços exatos do control plane gerenciado e da Mesh CA só se conhecem
+numa primeira execução (`kubectl -n dx03v2 logs <pod> -c istio-proxy`). Depois de descobrir, estreite a
+regra; é a única regra do namespace que abre a 443 para fora.
 
 ## 8. Conferir
 

@@ -1,0 +1,163 @@
+# Network edges and identity policy of the ambient exercise. In the ambient mesh pod-to-pod traffic travels as
+# HBONE on port 15008 of the destination pod, so the clients reach only the waypoint, the waypoint reaches the
+# demo backends, and the demo backends accept only the waypoint (plus the kubelet probes, which ztunnel sends
+# from the link-local address 169.254.7.127: https://istio.io/latest/docs/ambient/usage/networkpolicy/).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: mesh-demo-ingress
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: mesh-demo
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              gateway.networking.k8s.io/gateway-name: dx03v2-waypoint
+      ports:
+        - protocol: TCP
+          port: 15008
+    - from:
+        - ipBlock:
+            cidr: 169.254.7.127/32
+      ports:
+        - protocol: TCP
+          port: 3000
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: mesh-probe-egress
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: mesh-probe
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              gateway.networking.k8s.io/gateway-name: dx03v2-waypoint
+      ports:
+        - protocol: TCP
+          port: 15008
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: mesh-intruder-egress
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: mesh-intruder
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              gateway.networking.k8s.io/gateway-name: dx03v2-waypoint
+      ports:
+        - protocol: TCP
+          port: 15008
+---
+# The waypoint pod is selected by the default deny of the namespace like any other pod: it accepts the two
+# clients of the exercise over HBONE and the kubelet on the status port (from the lab network, as for the
+# Gateway pods of the local-platform component).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: waypoint-ingress
+spec:
+  podSelector:
+    matchLabels:
+      gateway.networking.k8s.io/gateway-name: dx03v2-waypoint
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: mesh-probe
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: mesh-intruder
+      ports:
+        - protocol: TCP
+          port: 15008
+    - from:
+        - ipBlock:
+            cidr: 10.252.0.0/24
+      ports:
+        - protocol: TCP
+          port: 15021
+---
+# ...and it reaches the demo backends over HBONE and istiod for its configuration (xDS) and certificates.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: waypoint-egress
+spec:
+  podSelector:
+    matchLabels:
+      gateway.networking.k8s.io/gateway-name: dx03v2-waypoint
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: mesh-demo
+      ports:
+        - protocol: TCP
+          port: 15008
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: istio-system
+          podSelector:
+            matchLabels:
+              app: istiod
+      ports:
+        - protocol: TCP
+          port: 15012
+---
+# Waypoint-bound L7 policy. A second L4 policy limits direct access to the backend pods to the
+# waypoint identity, so an unavailable/misconfigured waypoint cannot silently bypass this policy.
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: mesh-demo
+spec:
+  targetRefs:
+    - group: ''
+      kind: Service
+      name: mesh-demo
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            principals:
+              - cluster.local/ns/dx03v2/sa/mesh-probe
+      to:
+        - operation:
+            ports: ['3000']
+            methods: [GET]
+            paths: ['/variant', '/fail', '/healthz']
+---
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: mesh-demo-require-waypoint
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: mesh-demo
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            principals:
+              - cluster.local/ns/dx03v2/sa/dx03v2-waypoint
+      to:
+        - operation:
+            ports: ['3000']

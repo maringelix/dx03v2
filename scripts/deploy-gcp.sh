@@ -15,14 +15,18 @@
 #                       working tree must be clean (the images are tagged with it)
 #   GH_TOKEN            token with actions:read, attestations:read and packages:read
 #   GITHUB_REPOSITORY, GITHUB_ACTOR  repository and GHCR user used to verify/promote the release
+#   DEPLOY_MODE         auto (default: GitOps when Argo CD exists, direct apply otherwise), gitops or push
+#   PLATFORM_PROFILE    core|full; must match the tx03v2 platform profile installed on GKE
 #   ARGO_SYNC_TIMEOUT  seconds to wait for the Argo CD Application (default 600)
 #   SMOKE_WAIT_SECONDS  how long the smoke test waits for the load balancer (default 900)
-# Steps: Parameter Manager contract (tx03v2-lab-contract) -> GKE kubeconfig (DNS endpoint,
-# gke-gcloud-auth-plugin) -> API groups, GatewayClass and RBAC preflight -> Artifact Registry
-# verify signed release -> promote exact image digests to Artifact Registry (no rebuild)
-# -> ConfigMap cloudsql-ca (regional Cloud SQL CA bundle, contract root checked) -> configure Argo CD
-# and publish gitops/gcp (default) -> sync -> ExternalSecrets -> rollouts -> Gateway programmed on
-# the contract address -> smoke test through the load balancer. DEPLOY_MODE=push applies directly.
+# Steps: verify signed release -> Parameter Manager contract (tx03v2-lab-contract) -> GKE kubeconfig
+# (DNS endpoint, gke-gcloud-auth-plugin) -> API groups, GatewayClass and RBAC preflight -> promote exact
+# image digests to Artifact Registry (no rebuild) -> ConfigMap cloudsql-ca (regional Cloud SQL CA
+# bundle, contract root checked) -> configure Argo CD and publish gitops/gcp (default) -> sync ->
+# ExternalSecrets -> rollouts -> Gateway programmed on the contract address -> smoke test through the
+# load balancer (HTTPS on the contract hostname with PLATFORM_PROFILE=full). With --promote-only the
+# script stops after the promotion and writes the digests to GITHUB_OUTPUT: the workflow attests them
+# keylessly and runs the script again to deploy.
 # gcloud is the only credential holder: in GitHub Actions google-github-actions/auth writes a
 # Workload Identity Federation credentials file that gcloud refreshes for the whole job, and kubectl
 # gets its tokens from gcloud through gke-gcloud-auth-plugin. The Artifact Registry login of the
@@ -33,6 +37,8 @@ set -euo pipefail
 source "$(dirname "${BASH_SOURCE[0]}")/lib/common.sh"
 # shellcheck source=scripts/lib/k8s.sh
 source "$REPO_ROOT/scripts/lib/k8s.sh"
+# shellcheck source=scripts/lib/deploy-mode.sh
+source "$REPO_ROOT/scripts/lib/deploy-mode.sh"
 export PATH="$REPO_ROOT/.tools/bin:$PATH"
 
 NAMESPACE=dx03v2
@@ -41,7 +47,8 @@ CONTRACT_PARAMETER=tx03v2-lab-contract
 CONTRACT_KEYS=(
   project-id region cluster-name network-name nodes-subnet-cidr db/endpoint-ip lb-source-ranges
   artifact-registry/repository db/secret-name app/admin-token-secret-name eso/cluster-secret-store
-  gateway/address-name gateway/address waf/security-policy deploy/service-account
+  gateway/address-name gateway/address dns/hostname dns/certificate-map mesh/management
+  waf/security-policy deploy/service-account
 )
 # Values fixed in deploy/k8s/components/gcp and in this script: the parameter of tx03v2 must agree.
 CONTRACT_CLUSTER=tx03v2-lab
@@ -88,8 +95,12 @@ WEB_SOURCE_NAME=""
 WEB_SOURCE_DIGEST=""
 WEB_IMAGE_ID=""
 GATEWAY_ADDRESS=""
+DNS_HOSTNAME=""
+CERT_MAP=""
 BASE=""
-DEPLOY_MODE="${DEPLOY_MODE:-gitops}"
+DEPLOY_MODE="${DEPLOY_MODE:-auto}"
+PLATFORM_PROFILE="${PLATFORM_PROFILE:-core}"
+PROMOTE_ONLY=false
 ARGO_SYNC_TIMEOUT="${ARGO_SYNC_TIMEOUT:-600}"
 GITOPS_REV=""
 
@@ -151,6 +162,7 @@ write_summary() { # RESULT
     echo "| Item | Value |"
     echo "|---|---|"
     echo "| Commit | \`${GIT_SHA:-unknown}\` |"
+    echo "| Profile | \`$PLATFORM_PROFILE\` |"
     echo "| Overlay | \`deploy/k8s/overlays/$OVERLAY\` |"
     echo "| API image | \`${API_IMAGE:-not promoted}\` |"
     echo "| Web image | \`${WEB_IMAGE:-not promoted}\` |"
@@ -191,6 +203,21 @@ private_registry_config() {
   chmod 700 "$WORK_DIR/registry"
   export DOCKER_CONFIG="$WORK_DIR/registry"
 }
+
+# write_github_outputs -> the promoted Artifact Registry digests, for the attestation steps of the workflow.
+write_github_outputs() {
+  [[ -n "${GITHUB_OUTPUT:-}" ]] || return 0
+  [[ "$API_IMAGE" == *@sha256:* && "$WEB_IMAGE" == *@sha256:* ]] ||
+    die "refusing to publish invalid Artifact Registry image outputs"
+  {
+    printf 'registry_host=%s\n' "$REGISTRY_HOST"
+    printf 'api_name=%s\n' "${API_IMAGE%@*}"
+    printf 'api_digest=%s\n' "${API_IMAGE##*@}"
+    printf 'web_name=%s\n' "${WEB_IMAGE%@*}"
+    printf 'web_digest=%s\n' "${WEB_IMAGE##*@}"
+  } >>"$GITHUB_OUTPUT"
+}
+
 preflight() {
   local head account release_sha
   require_cmd gcloud gke-gcloud-auth-plugin kubectl node git curl base64 openssl awk gh jq crane
@@ -220,7 +247,9 @@ preflight() {
   GIT_SHA="$release_sha"
   [[ -n "${GCP_PROJECT_ID:-}" ]] || die "GCP_PROJECT_ID is required (the project of the lab; the script never guesses it)"
   [[ "$GCP_PROJECT_ID" =~ ^$K8S_GCP_PROJECT$ ]] || die "GCP_PROJECT_ID is not a Google Cloud project ID"
-  [[ "$DEPLOY_MODE" == gitops || "$DEPLOY_MODE" == push ]] || die "DEPLOY_MODE must be gitops or push"
+  [[ "$DEPLOY_MODE" == auto || "$DEPLOY_MODE" == gitops || "$DEPLOY_MODE" == push ]] ||
+    die "DEPLOY_MODE must be auto, gitops or push"
+  [[ "$PLATFORM_PROFILE" == core || "$PLATFORM_PROFILE" == full ]] || die "PLATFORM_PROFILE must be core or full"
   if [[ ! "$ARGO_SYNC_TIMEOUT" =~ ^[1-9][0-9]*$ ]] || ((ARGO_SYNC_TIMEOUT < 5)); then
     die "ARGO_SYNC_TIMEOUT must be an integer of at least 5 seconds"
   fi
@@ -293,6 +322,23 @@ read_contract() {
   expect_format gateway/address "^$IPV4\$"
   expect_format waf/security-policy "^($CONTRACT_WAF_POLICY|none)\$"
   expect_format deploy/service-account "^$CONTRACT_DEPLOY_ACCOUNT@$GCP_PROJECT_ID\\.iam\\.gserviceaccount\\.com\$"
+  expect_format dns/hostname "${K8S_PARAM_PATTERN[DNS_HOSTNAME]}"
+  expect_format dns/certificate-map "${K8S_PARAM_PATTERN[CERT_MAP]}"
+  expect_format mesh/management '^(managed|disabled)$'
+  # The hostname and its certificate map exist together (tx03v2 validates dns_zone_name with app_domain_name).
+  if [[ "$(param dns/hostname)" == disabled ]]; then
+    [[ "$(param dns/certificate-map)" == disabled ]] || die "dns/hostname is disabled but dns/certificate-map is not"
+  else
+    [[ "$(param dns/certificate-map)" != disabled ]] || die "dns/hostname is set but dns/certificate-map is disabled"
+  fi
+  if [[ "$PLATFORM_PROFILE" == full ]]; then
+    [[ "$(param dns/hostname)" != disabled ]] ||
+      die "profile full requires the public edge of tx03v2 (dns_zone_name and app_domain_name; docs/CONTRATO.md)"
+    [[ "$(param mesh/management)" == managed ]] ||
+      die "profile full requires the managed Cloud Service Mesh of tx03v2 (enable_managed_mesh; docs/CONTRATO.md)"
+  fi
+  DNS_HOSTNAME="$(param dns/hostname)"
+  CERT_MAP="$(param dns/certificate-map)"
   # The nodes subnet is RFC 1918 (validated by tx03v2) and the Private Service Connect endpoint of
   # Cloud SQL is one of its addresses: the egress NetworkPolicy allows exactly that /32.
   [[ "$(param nodes-subnet-cidr)" =~ ${K8S_PARAM_PATTERN[DB_ENDPOINT_IP]%\$}/ ]] ||
@@ -305,9 +351,12 @@ read_contract() {
   if [[ "$(param waf/security-policy)" == none ]]; then
     OVERLAY=gcp
   fi
+  if [[ "$PLATFORM_PROFILE" == full ]]; then
+    if [[ "$OVERLAY" == gcp-waf ]]; then OVERLAY=gcp-waf-full; else OVERLAY=gcp-full; fi
+  fi
   API_IMAGE="$(param artifact-registry/repository)/api:$GIT_SHA"
   WEB_IMAGE="$(param artifact-registry/repository)/web:$GIT_SHA"
-  log "contract: ${#CONTRACT_KEYS[@]} keys read and consistent with the manifests (overlay $OVERLAY)"
+  log "contract: ${#CONTRACT_KEYS[@]} keys read and consistent with profile $PLATFORM_PROFILE (overlay $OVERLAY)"
 }
 
 # connect_cluster -> temporary kubeconfig, then proof that the platform layer of tx03v2 is there and
@@ -315,6 +364,7 @@ read_contract() {
 connect_cluster() {
   local versions resource verb
   local -a missing=()
+  local -a required_resources=("${DEPLOY_RESOURCES[@]}")
   export KUBECONFIG="$WORK_DIR/kubeconfig"
   # The control plane has no public IP endpoint: the DNS endpoint authorizes every request with IAM
   # (roles/container.clusterViewer of the contract); kubectl authenticates through gke-gcloud-auth-plugin.
@@ -326,8 +376,17 @@ connect_cluster() {
   for resource in gateway.networking.k8s.io/v1 networking.gke.io/v1 external-secrets.io/v1; do
     grep -qxF "$resource" <<<"$versions" || missing+=("$resource")
   done
+  if [[ "$PLATFORM_PROFILE" == full ]]; then
+    # The Istio APIs come with the managed Cloud Service Mesh of tx03v2; the sidecars are checked after the rollout.
+    for resource in networking.istio.io/v1 security.istio.io/v1; do
+      grep -qxF "$resource" <<<"$versions" || missing+=("$resource")
+    done
+    required_resources+=(
+      destinationrules.networking.istio.io virtualservices.networking.istio.io authorizationpolicies.security.istio.io
+    )
+  fi
   ((${#missing[@]} == 0)) ||
-    die "the cluster does not serve ${missing[*]}: Gateway API on the cluster (tx03v2) and the External Secrets Operator of the tx03v2 platform layer"
+    die "the cluster does not serve ${missing[*]}: Gateway API on the cluster (tx03v2), the External Secrets Operator of the tx03v2 platform layer and, for PLATFORM_PROFILE=full, the managed Cloud Service Mesh"
   # GatewayClasses are cluster-scoped and outside the Role of the deployer: checked when readable,
   # otherwise the Gateway condition Programmed (below) is what proves the class.
   if [[ "$(kubectl auth can-i get gatewayclasses.gateway.networking.k8s.io 2>/dev/null)" == yes ]]; then
@@ -337,7 +396,7 @@ connect_cluster() {
   else
     log "GatewayClass $GATEWAY_CLASS not readable with this identity (cluster scope): the Gateway condition Programmed proves it"
   fi
-  for resource in "${DEPLOY_RESOURCES[@]}"; do
+  for resource in "${required_resources[@]}"; do
     for verb in get watch create patch delete; do
       [[ "$(kubectl auth can-i "$verb" "$resource" -n "$NAMESPACE" 2>/dev/null)" == yes ]] || missing+=("$verb $resource")
     done
@@ -347,6 +406,15 @@ connect_cluster() {
   done
   ((${#missing[@]} == 0)) ||
     die "this identity cannot deploy to namespace $NAMESPACE (${missing[*]}): it needs the RoleBinding dx03v2-deployers of the tx03v2 platform layer (Role dx03v2-deployer; subject: the e-mail of dx03v2-gha-deploy, or yours in app_deployer_members)"
+  if [[ "$DEPLOY_MODE" == auto ]]; then
+    DEPLOY_MODE="$(resolve_deploy_mode "$DEPLOY_MODE")" ||
+      die "cannot select a safe deploy mode; resolve Argo CD access and retry"
+    if [[ "$DEPLOY_MODE" == gitops ]]; then
+      log "Argo CD Application dx03v2 exists; using GitOps"
+    else
+      log "Argo CD Application dx03v2 is absent; applying the Google Cloud overlay directly"
+    fi
+  fi
   if [[ "$DEPLOY_MODE" == gitops ]]; then
     [[ "$(kubectl auth can-i patch applications.argoproj.io/dx03v2 -n argocd 2>/dev/null)" == yes ]] ||
       die "this identity cannot patch the Argo CD Application dx03v2 in argocd (tx03v2 full platform Role)"
@@ -472,11 +540,14 @@ write_params() {
   local params="$WORK_DIR/params.env"
   {
     echo "API_IMAGE=$API_IMAGE"
+    echo "MESH_IMAGE=$API_IMAGE"
     echo "WEB_IMAGE=$WEB_IMAGE"
     echo "GATEWAY_ADDRESS_NAME=$(param gateway/address-name)"
     echo "WAF_SECURITY_POLICY=$(param waf/security-policy)"
     echo "LB_SOURCE_RANGES=$(param lb-source-ranges)"
     echo "DB_ENDPOINT_IP=$(param db/endpoint-ip)"
+    echo "DNS_HOSTNAME=$DNS_HOSTNAME"
+    echo "CERT_MAP=$CERT_MAP"
   } >"$params"
 }
 
@@ -509,7 +580,7 @@ render_and_apply() {
   kubectl kustomize "$tree/overlays/$OVERLAY" >"$WORK_DIR/rendered.yaml"
   log "overlays/$OVERLAY rendered: $(grep -c '^kind: ' "$WORK_DIR/rendered.yaml") objects"
   kubectl apply -k "$tree/overlays/$OVERLAY"
-  if [[ "$OVERLAY" == gcp ]]; then
+  if [[ "$OVERLAY" != gcp-waf && "$OVERLAY" != gcp-waf-full ]]; then
     # waf/security-policy is none: policies left by an earlier deploy would name a deleted Cloud Armor policy.
     kubectl -n "$NAMESPACE" delete gcpbackendpolicies.networking.gke.io api web --ignore-not-found
   fi
@@ -571,6 +642,26 @@ wait_for_rollout() {
     die "Argo CD did not apply the requested immutable images (api=$api_image migrate=$api_init_image web=$web_image)"
   kubectl -n "$NAMESPACE" rollout status deployment/api --timeout=600s
   kubectl -n "$NAMESPACE" rollout status deployment/web --timeout=600s
+  if [[ "$PLATFORM_PROFILE" == full ]]; then
+    require_sidecars api web
+  fi
+}
+
+# require_sidecars WORKLOAD... -> every pod carries the istio-proxy container. The managed mesh injects at pod
+# creation: a pod without it is outside the STRICT mTLS and the identity policies that tx03v2 applies.
+require_sidecars() {
+  local workload pods pod
+  for workload in "$@"; do
+    pods="$(kubectl -n "$NAMESPACE" get pods -l "app.kubernetes.io/name=$workload" \
+      -o jsonpath='{range .items[*]}{range .spec.containers[*]}{.name},{end}{"\n"}{end}')" ||
+      die "cannot list the $workload pods"
+    [[ -n "$pods" ]] || die "no $workload pods after the rollout"
+    while IFS= read -r pod; do
+      [[ "$pod" == *istio-proxy* ]] ||
+        die "a $workload pod has no istio-proxy sidecar: the namespace $NAMESPACE is not injected by the managed Cloud Service Mesh of tx03v2"
+    done <<<"$pods"
+  done
+  log "managed mesh: the sidecars are in the pods of $*"
 }
 
 wait_for_gateway() {
@@ -589,12 +680,21 @@ wait_for_gateway() {
 }
 
 smoke() {
-  local status=0
-  BASE="http://$GATEWAY_ADDRESS"
-  # The admin token is a credential: the Gateway of the lab answers plain HTTP only (HTTPS in the
-  # clouds is outside the scope of v2), so the token is neither read nor sent, and the smoke test skips
-  # the one call that needs it (SKIP in the summary). The checks that send a made-up token still run.
-  log "the entry point is plain HTTP: the admin token is not read, and the smoke test skips the DELETE that needs it"
+  local status=0 code location
+  if [[ "$PLATFORM_PROFILE" == full ]]; then
+    BASE="https://$DNS_HOSTNAME"
+    code="$(curl -sS -m 15 -o /dev/null -w '%{http_code}' "http://$DNS_HOSTNAME/api/healthz")" ||
+      die "the public HTTP entry point is unreachable"
+    location="$(curl -sS -m 15 -D - -o /dev/null "http://$DNS_HOSTNAME/api/healthz" | tr -d '\r' | sed -n 's/^[Ll]ocation: //p' | head -n 1)" ||
+      die "the public HTTP redirect did not return a Location header"
+    [[ "$code" == 301 && "$location" == "https://$DNS_HOSTNAME/api/healthz" ]] ||
+      die "HTTP must redirect to the same HTTPS hostname and path (got $code and $location)"
+  else
+    BASE="http://$GATEWAY_ADDRESS"
+  fi
+  # Never read or send the admin token in the smoke test. Public HTTPS is verified in full; core is
+  # intentionally an HTTP learning path, so its credentialed DELETE remains skipped (SKIP in the summary).
+  log "smoke target: $BASE; credentialed DELETE is skipped"
   # SMOKE_EDGE=gke: the HTTPRoute sends /api straight to the API; Cloud Armor inspects the first
   # 64 KB and never blocks for size, so the API itself answers 413 for the 70 KB body.
   BASE_URL="$BASE" ADMIN_TOKEN="" SMOKE_EDGE=gke SMOKE_WAIT_SECONDS="${SMOKE_WAIT_SECONDS:-900}" \
@@ -603,13 +703,24 @@ smoke() {
 }
 
 main() {
-  (($# == 0)) || die "usage: $0 (configuration through environment variables, see the header)"
+  if (($# == 1)) && [[ "$1" == --promote-only ]]; then
+    PROMOTE_ONLY=true
+  elif (($# != 0)); then
+    die "usage: $0 [--promote-only] (configuration through environment variables, see the header)"
+  fi
   preflight
   WORK_DIR="$(mktemp -d)"
   trap cleanup EXIT
   private_registry_config
   section "contract: Parameter Manager $CONTRACT_PARAMETER"
   read_contract
+  if [[ "$PROMOTE_ONLY" == true ]]; then
+    section "Artifact Registry $REGISTRY_HOST: promote verified image digests"
+    publish_images
+    write_github_outputs
+    log "promotion complete; the workflow attests the Artifact Registry digests before deploying them"
+    return 0
+  fi
   section "cluster $(param cluster-name): kubeconfig, platform API groups, RBAC"
   connect_cluster
   section "Artifact Registry $REGISTRY_HOST: promote verified image digests"

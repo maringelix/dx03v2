@@ -10,6 +10,23 @@ on:
         description: Successful publish-images workflow run id for the release to deploy
         required: true
         type: string
+      deploy_mode:
+        description: Use Argo CD when available, or force the deployment path
+        required: true
+        default: auto
+        type: choice
+        options:
+          - auto
+          - gitops
+          - push
+      platform_profile:
+        description: Must match the tx03v2 platform profile installed on GKE
+        required: true
+        default: core
+        type: choice
+        options:
+          - core
+          - full
 
 permissions:
   contents: read
@@ -31,6 +48,13 @@ jobs:
       GH_TOKEN: ${{ github.token }}
       RELEASE_RUN_ID: ${{ inputs.release_run_id }}
     steps:
+      - name: Require the deployment workflow from main
+        run: |
+          [[ "$GITHUB_REF" == refs/heads/main ]] || {
+            echo "::error::deploy-gcp must run from main so the promotion signer has the pinned identity."
+            exit 1
+          }
+
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
@@ -68,12 +92,14 @@ jobs:
     environment: lab
     permissions:
       actions: read
-      attestations: read
+      attestations: write
+      artifact-metadata: write
       contents: write
       id-token: write
       packages: read
     env:
-      DEPLOY_MODE: gitops
+      DEPLOY_MODE: ${{ inputs.deploy_mode }}
+      PLATFORM_PROFILE: ${{ inputs.platform_profile }}
       GCP_PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
       GCP_WORKLOAD_IDENTITY_PROVIDER: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
       GCP_DEPLOY_SERVICE_ACCOUNT: ${{ vars.GCP_DEPLOY_SERVICE_ACCOUNT }}
@@ -141,7 +167,79 @@ jobs:
           version: '588.0.0'
           install_components: gke-gcloud-auth-plugin
 
-      - name: Deploy the verified digests (no rebuild)
+      - name: Promote the verified image digests to Artifact Registry (no rebuild)
+        id: promote
+        env:
+          RELEASE_DIR: ${{ runner.temp }}/dx03v2-release
+        run: bash scripts/deploy-gcp.sh --promote-only
+
+      - name: Authenticate to Artifact Registry for promotion attestations
+        env:
+          REGISTRY_HOST: ${{ steps.promote.outputs.registry_host }}
+        run: gcloud auth print-access-token | docker login "$REGISTRY_HOST" --username oauth2accesstoken --password-stdin
+
+      - name: Write the Artifact Registry promotion predicates
+        env:
+          RELEASE_DIR: ${{ runner.temp }}/dx03v2-release
+          API_AR_NAME: ${{ steps.promote.outputs.api_name }}
+          API_AR_DIGEST: ${{ steps.promote.outputs.api_digest }}
+          WEB_AR_NAME: ${{ steps.promote.outputs.web_name }}
+          WEB_AR_DIGEST: ${{ steps.promote.outputs.web_digest }}
+        run: bash scripts/write-promotion-statements.sh
+
+      - name: Attest the promoted API image
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-name: ${{ steps.promote.outputs.api_name }}
+          subject-digest: ${{ steps.promote.outputs.api_digest }}
+          predicate-type: https://github.com/maringelix/tx00v2/attestations/promoted-image/v1
+          predicate-path: ${{ runner.temp }}/dx03v2-promotion/api.json
+          push-to-registry: true
+          create-storage-record: false
+
+      - name: Attest the promoted web image
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-name: ${{ steps.promote.outputs.web_name }}
+          subject-digest: ${{ steps.promote.outputs.web_digest }}
+          predicate-type: https://github.com/maringelix/tx00v2/attestations/promoted-image/v1
+          predicate-path: ${{ runner.temp }}/dx03v2-promotion/web.json
+          push-to-registry: true
+          create-storage-record: false
+
+      - name: Verify the promotion signatures, workflow identity, and source commit
+        env:
+          API_AR_NAME: ${{ steps.promote.outputs.api_name }}
+          API_AR_DIGEST: ${{ steps.promote.outputs.api_digest }}
+          WEB_AR_NAME: ${{ steps.promote.outputs.web_name }}
+          WEB_AR_DIGEST: ${{ steps.promote.outputs.web_digest }}
+        run: |
+          set -euo pipefail
+          expected_workflow="$GITHUB_REPOSITORY/.github/workflows/deploy-gcp.yml"
+          predicate_type='https://github.com/maringelix/tx00v2/attestations/promoted-image/v1'
+          for component in api web; do
+            image_name_var="${component^^}_AR_NAME"
+            image_digest_var="${component^^}_AR_DIGEST"
+            image_name="${!image_name_var}"
+            image_digest="${!image_digest_var}"
+            gh attestation verify "oci://$image_name@$image_digest" \
+              --repo "$GITHUB_REPOSITORY" \
+              --predicate-type "$predicate_type" \
+              --signer-workflow "$expected_workflow" \
+              --cert-oidc-issuer https://token.actions.githubusercontent.com \
+              --source-ref refs/heads/main \
+              --source-digest "$GITHUB_SHA" \
+              --deny-self-hosted-runners
+          done
+
+      - name: Deploy the now-attested image digests
         env:
           RELEASE_DIR: ${{ runner.temp }}/dx03v2-release
         run: bash scripts/deploy-gcp.sh
+
+      - name: Remove the Artifact Registry credentials
+        if: always()
+        env:
+          REGISTRY_HOST: ${{ steps.promote.outputs.registry_host }}
+        run: |
+          if [[ -n "$REGISTRY_HOST" ]]; then docker logout "$REGISTRY_HOST"; fi

@@ -1,0 +1,12 @@
+# GKE Autopilot lab cluster of tx03v2 with the full platform profile and its optional Cloud Armor policy.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: dx03v2
+resources:
+  - ../../base
+  - gitops-revision.yaml
+components:
+  - ../../components/gcp
+  - ../../components/gcp-https
+  - ../../components/gcp-waf
+  - ../../components/mesh-csm

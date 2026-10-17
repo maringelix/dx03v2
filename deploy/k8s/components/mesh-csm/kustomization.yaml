@@ -1,0 +1,66 @@
+# Service-mesh exercise of the GKE profile full (tx03v2 contract version 4): the managed Cloud Service
+# Mesh, Istio sidecars injected in the namespace dx03v2 (Autopilot cannot run the privileged ambient
+# DaemonSets, so there is no waypoint). Route, ejection and identity policy are those of the ambient twin
+# (components/mesh-full, used by the local lab), written for sidecars. The mesh itself, STRICT mTLS and the
+# policies of web and api belong to tx03v2 (platform/manifests/full/app-security.yaml).
+# Needs the deploy-params ConfigMap of components/gcp (approved API image, Cloud SQL endpoint).
+apiVersion: kustomize.config.k8s.io/v1alpha1
+kind: Component
+labels:
+  - pairs:
+      app.kubernetes.io/part-of: dx03v2
+    includeSelectors: false
+    includeTemplates: true
+components:
+  - ../mesh-demo
+resources:
+  - mesh-route.yaml
+  - mesh-policy.yaml
+  - networkpolicies.yaml
+patches:
+  # Autopilot bills the requests of every container, and the sidecar default is far above what this lab
+  # needs (docs/CUSTOS.md of tx03v2): the proxy gets an explicit, small size on every workload.
+  - target:
+      kind: Deployment
+    patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: unused
+      spec:
+        template:
+          metadata:
+            annotations:
+              sidecar.istio.io/proxyCPU: 50m
+              sidecar.istio.io/proxyMemory: 96Mi
+              sidecar.istio.io/proxyMemoryLimit: 192Mi
+  # The migrate initContainer opens its connection to Cloud SQL before the sidecar runs, and the
+  # Cloud SQL endpoint is not in the mesh: its address bypasses the proxy for the whole pod.
+  - target:
+      kind: Deployment
+      name: api
+    patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: api
+      spec:
+        template:
+          metadata:
+            annotations:
+              traffic.sidecar.istio.io/excludeOutboundIPRanges: 192.0.2.1/32
+replacements:
+  # DB_ENDPOINT_IP replaces the address part of `<ip>/32`.
+  - source:
+      kind: ConfigMap
+      name: deploy-params
+      fieldPath: data.DB_ENDPOINT_IP
+    targets:
+      - select:
+          kind: Deployment
+          name: api
+        fieldPaths:
+          - spec.template.metadata.annotations.[traffic.sidecar.istio.io/excludeOutboundIPRanges]
+        options:
+          delimiter: /
+          index: 0

@@ -5,8 +5,30 @@ All notable changes to this project are documented here. The format follows
 [Conventional Commits](https://www.conventionalcommits.org/).
 
 ## [Unreleased]
+### Fixed
+
+- The platform rollback exercise keeps the mesh demo on the tested R8 API image while deploying the
+  previous application artifact, whose image predates the demo. The local lab still proves a real
+  rollback of the API and web release.
+
 ### Added
 
+- R8 for the Google Cloud pair, contract version 4 (with tx03v2 R8): the full profile serves HTTPS on the
+  contract hostname with the Google-managed certificate of the tx03v2 Certificate Map (annotation on the
+  Gateway, no TLS Secret) and answers plain HTTP with a 301 to the same hostname and path. Core stays an
+  HTTP learning path. Neither the issuance nor the Google Cloud runtime has been exercised.
+- Service-mesh exercise (`api/src/mesh-demo.ts`, `api/src/mesh-probe.ts`, with unit tests): a stable and a
+  canary backend of the API image, an 80/20 split, at most two retries, ejection of the canary after three
+  5xx and identity authorization (an allowed probe and an intruder that receives 403). The local lab runs it
+  on the ambient mesh and `e2e-platform` proves it (`mesh-full`); the full cloud profile runs it on the
+  managed Cloud Service Mesh sidecars (`mesh-csm`), whose NetworkPolicies admit the sidecars' path to the
+  managed control plane, the Collector's synthetic probe and the exercise pods, and whose pods ask for a small
+  explicit proxy. Cloud-side behavior is `not run in the cloud (v2)`.
+- `deploy-gcp` inputs `platform_profile` (`core|full`) and `deploy_mode` (`auto|gitops|push`); `auto` picks
+  GitOps when the Argo CD Application exists and fails closed on lookup errors. The workflow promotes the
+  verified digests to Artifact Registry, attests the promoted digests keylessly (the policy of tx03v2 admits only
+  that signer), verifies the attestation and only then deploys. New offline tests for the deploy mode and the
+  promotion statements.
 - CodeQL `security-extended` with a SARIF gate, a disposable SonarQube Quality Gate with a negative
   coverage fixture, the Gitleaks negative test and OWASP ZAP Baseline against the disposable Compose
   app. The reports and the exact tested image IDs are retained as CI artifacts.
@@ -19,11 +41,11 @@ All notable changes to this project are documented here. The format follows
   the previous image after an unavailable candidate; the additive database migration remains. The
   platform suite now has 19 probes, with the smoke test last because it consumes the write limit.
 - Cloud deploy now publishes the app source revision to `gitops/gcp` with example parameters, then
-  waits for Argo CD to report that exact revision `Synced` and `Healthy`. Direct push remains
-  available through the script when Argo CD is not managing the app; the Actions workflow always
-  uses GitOps.
-- Contract version 3 with tx03v2 records the R4 GitOps Application and restricted refresh permission,
-  coordinated with [tx03v2#14](https://github.com/maringelix/tx03v2/pull/14).
+  waits for Argo CD to report that exact revision `Synced` and `Healthy`; direct push applies the
+  overlay when Argo CD is not managing the app (selected automatically, see the inputs above).
+- Contract version 3 with tx03v2 recorded the R4 GitOps Application and restricted refresh permission,
+  coordinated with [tx03v2#14](https://github.com/maringelix/tx03v2/pull/14); version 4 adds three
+  Parameter Manager keys (`dns/hostname`, `dns/certificate-map`, `mesh/management`, 18 in total).
 
 
 ### Security
@@ -37,9 +59,8 @@ All notable changes to this project are documented here. The format follows
   `e2e-platform` and `family-ref` check the integrated infrastructure.
 
 - The smoke test never sends the admin token over plain HTTP to another machine (roadmap R3.17): it
-  is sent over HTTPS or to `127.0.0.1`; on any other plain HTTP entry point, such as the Google Cloud lab
-  (the load balancer of the Gateway answers HTTP only), the one call that needs it is skipped (`SKIP` in the
-  output) and `scripts/deploy-gcp.sh` does not even read the token.
+  is sent over HTTPS or to `127.0.0.1`. The Google Cloud core profile stays on HTTP, and the deploy script
+  does not read the token in either profile; its credentialed call is skipped (`SKIP` in the output).
 - `scripts/repo-guardrails.sh` (same file in the six lab repositories, roadmap R3.15 and R3.18) fails
   instead of skipping when it cannot protect the environment `lab`, leaves only `main` in it, reads it
   back, fails when the OIDC subject of the repository is name-based (the cloud trust expects the

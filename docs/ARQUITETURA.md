@@ -83,7 +83,7 @@ flowchart LR
   gw -.->|"programa"| lb
   api -->|"TLS verify-full (ConfigMap cloudsql-ca)<br/>endpoint PSC /32"| sql[("Cloud SQL PostgreSQL 17")]
   sm["Secret Manager"] --> eso
-  gha["deploy-gcp (Workload Identity Federation, workflow_dispatch)"] -->|"Parameter Manager, Artifact Registry, branch gitops/gcp, Argo CD"| gke
+  gha["deploy-gcp (Workload Identity Federation, workflow_dispatch)"] -->|"Parameter Manager, Artifact Registry + atestação de promoção, GitOps ou apply direto"| gke
 ```
 
 O namespace, a RBAC do deployer, o ClusterSecretStore, o External Secrets Operator, o endereço
@@ -96,6 +96,14 @@ um `params.env` e `replacements` do kustomize. O load balancer chega aos pods di
 (IP e porta do pod), a partir das faixas `35.191.0.0/16` e `130.211.0.0/22` dos Google Front Ends e
 dos health checks — por isso as NetworkPolicies liberam essas duas faixas, e não o nó.
 
+O perfil `full` acrescenta HTTPS no hostname do contrato (certificado gerenciado pelo Certificate Map do
+tx03v2, redirect HTTP 301) e o exercício de malha nos sidecars do Cloud Service Mesh gerenciado: um
+`VirtualService` divide `/variant` em 80/20 entre `mesh-stable` e `mesh-canary`, limita retries em `/fail` e
+um `DestinationRule` ejeta o canário depois de três 5xx; uma `AuthorizationPolicy` aceita só a identidade
+`mesh-probe` e o `mesh-intruder` recebe 403. Como o Autopilot não roda o Istio ambient, o lab local prova o
+mesmo exercício na malha ambient (`components/mesh-full`, com waypoint) e a nuvem o roda em sidecars
+(`components/mesh-csm`); os dois compartilham os backends (`components/mesh-demo`).
+
 ## Decisões
 
 1. **Um processo por container.** API e web em imagens e Deployments separados; nada de nginx e Node
@@ -107,7 +115,7 @@ dos health checks — por isso as NetworkPolicies liberam essas duas faixas, e n
    `/api/` com os cabeçalhos de encaminhamento padrão, fallback de SPA e cache longo para os assets
    com hash. Os cabeçalhos de segurança ficam em um snippet incluído em **cada** `location`. HSTS só
    quando `X-Forwarded-Proto` é `https`; o load balancer preenche esse cabeçalho com o protocolo que
-   recebeu, e como o listener do Gateway é só HTTP (HTTPS `planejado`), nada de HSTS no Google Cloud.
+   recebeu; no perfil core o listener do Gateway é só HTTP, então não há HSTS ali, e no perfil full a página sai por HTTPS e o `X-Forwarded-Proto` é `https`.
 4. **`trust proxy` como contagem de saltos.** `TRUST_PROXY_HOPS=1` em compose e kind (o nginx) e `2`
    no Google Cloud. A documentação "External Application Load Balancer overview" (verificada em
    2026-10-11) diz que o proxy acrescenta `<ip do cliente>,<ip do load balancer>` ao que o cliente
@@ -143,12 +151,13 @@ dos health checks — por isso as NetworkPolicies liberam essas duas faixas, e n
     mais longo vence na Gateway API) e `/` para o web; uma HealthCheckPolicy por Service define os
     health checks (`/healthz` na 8080, `/readyz` na 3000), que saem das mesmas faixas do tráfego.
 13. **WAF como componente opcional.** `components/gcp-waf` (uma GCPBackendPolicy por Service com a
-    `securityPolicy` do Cloud Armor) só entra no overlay `gcp-waf`, escolhido pelo deploy quando
-    `waf/security-policy` não é `none`; com `none`, o overlay `gcp` e o deploy apaga as políticas
+    `securityPolicy` do Cloud Armor) só entra nos overlays `gcp-waf` e `gcp-waf-full`, escolhidos pelo deploy
+    quando `waf/security-policy` não é `none`; com `none`, `gcp`/`gcp-full` e o deploy apaga as políticas
     antigas, que apontariam para uma política do Cloud Armor apagada.
-14. **Kustomize com componentes.** `base` neutra; `overlays/local` (kind) e `overlays/gcp` / `gcp-waf`
-    (componentes `gcp` e `gcp-waf`). No Google Cloud o HPA controla as réplicas da API
-    (`spec.replicas` removido). O CI renderiza e valida todos os overlays com `params.example.env`.
+14. **Kustomize com componentes.** `base` neutra; `overlays/local` (kind), `gcp` e `gcp-waf` (perfil core),
+    `gcp-full` e `gcp-waf-full` (core mais `gcp-https` e `mesh-csm`) e `local-platform` (malha ambient no kind do
+    tx03v2). No Google Cloud o HPA controla as réplicas da API (`spec.replicas` removido). O CI renderiza
+    e valida todos os overlays com `params.example.env`.
 15. **Schemas dos CRDs gerados e fixados.** O kubeconform valida Gateway e HTTPRoute contra schemas
     convertidos por `scripts/update-crd-schemas.sh` do asset oficial `standard-install.yaml` da
     Gateway API v1.5.0 (SHA-256 igual ao digest que o GitHub registra), a versão que a GKE serve. A
@@ -164,6 +173,10 @@ dos health checks — por isso as NetworkPolicies liberam essas duas faixas, e n
 17. **Tags de imagem que não mudam.** No Artifact Registry, tag = SHA completo do commit, num
     repositório com tags imutáveis. O deploy lista as tags antes e reaproveita uma imagem que já
     existe, sem tentar publicá-la de novo. Localmente a tag é `e2e` (kind) ou `local` (compose).
+    Promoção atestada, sem rebuild: o workflow `deploy-gcp` verifica o release e a imagem do GHCR, promove
+    a mesma imagem para o Artifact Registry e assina uma atestação que liga os digests de origem e
+    destino; no perfil full o Kyverno exige essa assinatura antes de admitir o pod. `platform_profile`
+    seleciona `core|full`; `deploy_mode` seleciona `auto|gitops|push`.
 18. **Uma credencial só: o gcloud.** No GitHub Actions o `google-github-actions/auth` grava um arquivo
     de credenciais do Workload Identity Federation (`gha-creds-*.json`, fora do git e de todo
     contexto de build, conferido pelo `policy-images`) que o gcloud renova durante o job; o kubectl
@@ -233,12 +246,12 @@ dos health checks — por isso as NetworkPolicies liberam essas duas faixas, e n
 | Saltos confiáveis (`TRUST_PROXY_HOPS`) | 1 | 1 | 2 |
 | Health checks | anotações nos Services | HealthCheckPolicy por Service | HealthCheckPolicy por Service (`networking.gke.io`) |
 | Segredos | Secrets Manager → ESO | Key Vault → ESO | Secret Manager → ESO (`gcp-secret-manager`) |
-| Parâmetros do contrato | SSM `/tx01v2/lab/*` (10) | App Configuration `tx02v2/lab/*` (15) | Parameter Manager `tx03v2-lab-contract`, um JSON com 15 chaves |
+| Parâmetros do contrato | SSM `/tx01v2/lab/*` (10) | App Configuration `tx02v2/lab/*` (15) | Parameter Manager `tx03v2-lab-contract`, um JSON com 18 chaves |
 | Registry | ECR, tags IMMUTABLE | ACR Basic, o deploy recusa sobrescrever tags | Artifact Registry, tags imutáveis; tag existente reaproveitada |
 | TLS do banco | bundle `rds-ca` da região | três raízes com thumbprint SHA-1 conferido | bundle da região com a raiz do contrato (SHA-256) e só CAs emitidas por ela |
 | NetworkPolicies de borda | CIDR da VPC (ALB e RDS) | subnet do AGC (/24) e subnet delegada do PostgreSQL | faixas do load balancer, `/32` do endpoint PSC e cache DNS do nó |
 | Enforcement de NetworkPolicy | VPC CNI | Cilium (Azure CNI Overlay) | Dataplane V2 |
-| HTTPS | overlay `aws-https` (certificado ACM) | `planejado` | `planejado` |
+| HTTPS | overlay `aws-https` (certificado ACM) | AGC com certificado ACME no perfil full | Gateway com certificado gerenciado do Certificate Map no perfil full (`gcp-https`) |
 | Identidade do GitHub | papel IAM com OIDC | managed identity com credencial federada | conta de serviço `dx03v2-gha-deploy` com Workload Identity Federation |
 | Ferramentas do harness | 8 | as mesmas + `kubelogin` | as mesmas 8 (o gcloud vem do `setup-gcloud` no workflow) |
 | Schemas do kubeconform | catálogo datreeio (ESO) | + gerados dos CRDs do ALB Controller | + Gateway API do asset oficial e `networking.gke.io` de um commit fixado do catálogo |

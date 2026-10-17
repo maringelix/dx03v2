@@ -4,7 +4,7 @@
 set -euo pipefail
 
 usage() {
-  echo "usage: $0 <gcp> <gcp|gcp-waf> <source-commit-sha> <api-sha256-digest> <web-sha256-digest>" >&2
+  echo "usage: $0 <gcp> <gcp|gcp-waf|gcp-full|gcp-waf-full> <source-commit-sha> <api-sha256-digest> <web-sha256-digest>" >&2
   exit 2
 }
 
@@ -18,7 +18,7 @@ web_digest=$5
 [[ "$revision" =~ ^[0-9a-f]{40}$ ]] || usage
 [[ "$api_digest" =~ ^sha256:[0-9a-f]{64}$ && "$web_digest" =~ ^sha256:[0-9a-f]{64}$ ]] || usage
 case "$cloud:$overlay" in
-  gcp:gcp|gcp:gcp-waf) ;;
+  gcp:gcp|gcp:gcp-waf|gcp:gcp-full|gcp:gcp-waf-full) ;;
   *) usage ;;
 esac
 

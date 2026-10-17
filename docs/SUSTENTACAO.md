@@ -15,7 +15,7 @@ plataforma) é do `tx03v2`, com a sustentação descrita lá.
 
 - Estágios `static`, `test`, `build`, `e2e` e `platform` `verificado no CI` nos jobs `static`, `test`, `images`, `e2e` e `e2e-platform`; a suíte também passa localmente em containers Linux (`HARNESS_STRICT=1`).
 - Deploy no Google Cloud: `não executado em nuvem (v2)`. O harness confere o fluxo assinado; nenhuma release GHCR nem implantação cloud foi executada nesta rodada.
-- Contrato com o tx03v2: versão 3 de 2026-10-16, com a Application Argo CD e refresh restrito do R4; a versão 2 introduziu o endpoint OTLP do Collector (`docs/CONTRATO.md`).
+- Contrato com o tx03v2: versão 4 de 2026-10-17 (R8: HTTPS, malha gerenciada, atestação de promoção, 18 chaves); a versão 3 trouxe a Application Argo CD e o refresh restrito do R4 e a versão 2 o endpoint OTLP do Collector (`docs/CONTRATO.md`).
 - App: o do `dx02v2` (que é o do `dx01v2` no commit `22e69c4`), com as diferenças da seção 5.11.
   O caso do `X-Forwarded-For` do load balancer do Google Cloud (`TRUST_PROXY_HOPS=2`) no teste de
   integração `rate-limit` começou aqui e já está no dx01v2 e no dx02v2.

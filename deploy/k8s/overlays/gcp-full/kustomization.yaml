@@ -1,0 +1,13 @@
+# GKE Autopilot lab cluster of tx03v2 with the full platform profile (managed Cloud Service Mesh, signed
+# image policy, durable observability and chaos). Rendered and applied by scripts/deploy-gcp.sh from a
+# temporary copy that contains components/gcp/params.env.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: dx03v2
+resources:
+  - ../../base
+  - gitops-revision.yaml
+components:
+  - ../../components/gcp
+  - ../../components/gcp-https
+  - ../../components/mesh-csm

@@ -96,6 +96,14 @@ OpenTelemetry Collector (OTLP/HTTP, `OTEL_EXPORTER_OTLP_ENDPOINT`), saída do Ga
 dashboard do Grafana. Só usa os kinds que o AppProject `dx03v2` do tx03v2 aceita (o `contract-app`
 confere).
 
+O componente `mesh-full` (R8.2) acrescenta o exercício de malha com um waypoint próprio (Gateway
+`dx03v2-waypoint`, classe `istio-waypoint`) ligado só aos três Services `mesh-*`: dois backends da imagem da API
+(`mesh-stable` e `mesh-canary`, `api/src/mesh-demo.ts`), um HTTPRoute com 80/20 em `/variant` e no máximo dois
+retries em `/fail` (canal experimental da Gateway API no lab do tx03v2), um DestinationRule que ejeta o canário
+após três 5xx e uma AuthorizationPolicy no waypoint que só aceita a identidade `mesh-probe`. As NetworkPolicies do
+waypoint e dos backends são explícitas (HBONE na 15008, istiod na 15012, kubelet). O restante do app não passa
+pelo waypoint. A nuvem roda o mesmo exercício nos sidecars do Cloud Service Mesh gerenciado (`mesh-csm`).
+
 ## Traces, logs e métricas ligados
 
 A API cria um span SERVER por requisição (com o nome da rota, nunca o caminho cru) e um span CLIENT por
@@ -113,7 +121,7 @@ linha de log para o trace. Sem `OTEL_EXPORTER_OTLP_ENDPOINT` (compose, kind, tes
 | gitops | as imagens estão no registry do lab, o Argo CD sincronizou o commit (Synced, Healthy) e recria um objeto apagado |
 | backup | `pg_dump` do banco do lab, mensagem apagada pela API, restore traz de volta |
 | smoke | o smoke test inteiro (`e2e/smoke.mjs`, `SMOKE_EDGE=istio`) por HTTPS em `dx03v2.tx03v2.local`, de fora do mesh: load balancer emulado → Gateway do Istio → app, certificado conferido contra a CA do lab |
-| mesh | um cliente em texto puro fora do mesh não chega na API |
+| mesh | um cliente em texto puro fora do mesh não chega na API nem no serviço do exercício; o Job com a identidade `mesh-probe` mede o 80/20 do canário (400 requisições), a requisição de falha tem o original mais dois retries no canário (contados nos logs do backend) e, depois da ejeção, a seguinte não chega mais nele; o Job com a identidade `mesh-intruder` recebe 403 |
 | observability | Prometheus coleta a API pelo mesh, as cinco regras estão carregadas, há métricas do tráfego do smoke, o Grafana carregou o dashboard, os logs da API estão no Loki |
 | tracing | uma leitura com `traceparent` vira um trace no Tempo da borda ao banco (span do Gateway, `GET /api/messages`, `SELECT dx03v2`); as linhas de log dela no Loki têm o `trace_id`; o histograma da API no Prometheus tem um exemplar com ele |
 | trivy | o Trivy Operator gerou relatórios de vulnerabilidade das imagens do app |

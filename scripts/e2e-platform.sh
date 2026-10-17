@@ -6,7 +6,7 @@
 #   4. probes of the app on the platform (below), every one with real traffic or API calls
 #   5. tx03v2 scripts/local-lab.sh down + leftover check, always (unless KEEP_LAB=1)
 # Probes: smoke test through HTTPS from outside the mesh (load balancer emulator -> Istio Gateway ->
-# app), mTLS STRICT and the AuthorizationPolicy, Prometheus target and alert rules, Grafana dashboard,
+# app), mTLS STRICT and the AuthorizationPolicy, L7 canary/retry/outlier behavior, Prometheus target and alert rules, Grafana dashboard,
 # logs in Loki, one OpenTelemetry trace from the edge to the database (logs and exemplars carrying its
 # id), Trivy reports of the app images, the HPA, a zero-downtime GitOps rollout of a new version, a
 # database backup + restore drill, Argo CD self-heal, and two chaos experiments with a hypothesis (one
@@ -104,6 +104,13 @@ build_images() {
   previous_tree="$WORK_DIR/previous-source"
   mkdir -p "$previous_tree"
   git -C "$REPO_ROOT" archive "$PREVIOUS_SHA" | tar -x -C "$previous_tree"
+  # The first deploy of the exercise runs the previous release with the manifests under test, and the backends
+  # and probes of the service-mesh exercise are programs of the API image (api/src/mesh-demo.ts, mesh-probe.ts).
+  # The commit that introduces them has no previous release that contains them, so the previous image gets those
+  # two sources from the tree under test; once the previous commit has them, nothing is copied.
+  for c in api/src/mesh-demo.ts api/src/mesh-probe.ts; do
+    [[ -e "$previous_tree/$c" ]] || cp "$REPO_ROOT/$c" "$previous_tree/$c"
+  done
   for c in api web; do
     log "building previous release dx03v2-$c:previous ($PREVIOUS_SHA)"
     docker build -q -f "$previous_tree/$c/Dockerfile" --build-arg GIT_SHA="$PREVIOUS_SHA" \
@@ -288,6 +295,100 @@ check_mesh() {
   code="$(curl_probe "http://api.$NAMESPACE.svc:3000/readyz" | tail -n 1)"
   [[ "$code" == 000 ]] || die "mesh: a plaintext client outside the mesh reached api:3000 (HTTP $code)"
   pass "mesh: plaintext client outside the mesh -> api:3000 refused (STRICT mTLS + NetworkPolicy)"
+}
+
+run_mesh_probe() {
+  local job=$1 service_account=$2 mode=$3 app_label=$4 image
+  image="$(kubectl -n "$NAMESPACE" get deployment mesh-stable -o jsonpath='{.spec.template.spec.containers[?(@.name=="main")].image}')"
+  [[ "$image" =~ ^[^[:space:]]+(@sha256:[0-9a-f]{64}|:[A-Za-z0-9._-]+)$ ]] ||
+    die "mesh: the probe image is not the API image selected by GitOps"
+  kubectl -n "$NAMESPACE" delete job "$job" --ignore-not-found=true --wait=true >/dev/null
+  kubectl -n "$NAMESPACE" apply -f - >/dev/null <<EOF
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: $job
+spec:
+  activeDeadlineSeconds: 120
+  backoffLimit: 0
+  ttlSecondsAfterFinished: 300
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: $app_label
+    spec:
+      serviceAccountName: $service_account
+      automountServiceAccountToken: false
+      restartPolicy: Never
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: probe
+          image: "$image"
+          imagePullPolicy: IfNotPresent
+          args: ["dist/mesh-probe.js"]
+          env:
+            - name: MESH_PROBE_MODE
+              value: "$mode"
+            - name: MESH_PROBE_TARGET
+              value: http://mesh-demo:3000
+          # The Gatekeeper constraint required-probes asks every container of the namespace for a readiness
+          # probe, also the one-shot client of the exercise: this one only proves that the runtime answers.
+          readinessProbe:
+            exec:
+              command: ["/nodejs/bin/node", "-e", "process.exit(0)"]
+            periodSeconds: 5
+            timeoutSeconds: 5
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            capabilities:
+              drop: ["ALL"]
+          resources:
+            requests:
+              cpu: 25m
+              memory: 64Mi
+            limits:
+              memory: 128Mi
+EOF
+  if ! kubectl -n "$NAMESPACE" wait --for=condition=complete "job/$job" --timeout=150s; then
+    if ! kubectl -n "$NAMESPACE" logs "job/$job"; then
+      log "mesh: no logs were available for failed probe job $job"
+    fi
+    die "mesh: probe job $job did not complete successfully"
+  fi
+  kubectl -n "$NAMESPACE" logs "job/$job"
+}
+
+check_mesh_advanced() {
+  local code allowed_log intruder_log canary_logs retry_id isolation_id retry_count=0 isolation_count=0 line
+  code="$(curl_probe "http://mesh-demo.$NAMESPACE.svc:3000/variant" | tail -n 1)"
+  [[ "$code" == 000 ]] || die "mesh: an external, non-mesh client reached the full-profile demo (HTTP $code)"
+  pass "mesh: the canary service is not exposed outside the ambient mesh"
+
+  allowed_log="$(run_mesh_probe mesh-probe mesh-probe allowed mesh-probe)"
+  [[ "$allowed_log" == *MESH_PROBE_RESULT\ total=400* ]] || die "mesh: the authorized probe did not report its traffic sample"
+  [[ "$allowed_log" =~ retry_request_id=([A-Za-z0-9_]+)[[:space:]]isolation_request_id=([A-Za-z0-9_]+) ]] ||
+    die "mesh: the authorized probe did not report retry identifiers"
+  retry_id="${BASH_REMATCH[1]}"
+  isolation_id="${BASH_REMATCH[2]}"
+  canary_logs="$(kubectl -n "$NAMESPACE" logs -l mesh.lab/variant=canary -c main --since=10m)"
+  while IFS= read -r line; do
+    if [[ "$line" == *"probe_id=$retry_id"* ]]; then retry_count=$((retry_count + 1)); fi
+    if [[ "$line" == *"probe_id=$isolation_id"* ]]; then isolation_count=$((isolation_count + 1)); fi
+  done <<<"$canary_logs"
+  [[ "$retry_count" -eq 3 ]] || die "mesh: retry amplification was $retry_count attempts; expected the original plus two retries"
+  [[ "$isolation_count" -eq 0 ]] || die "mesh: the ejected canary received another request ($isolation_count backend attempts)"
+  pass "mesh: HTTPRoute balances the 80/20 canary, caps retries at two, and ejects the failing endpoint"
+
+  intruder_log="$(run_mesh_probe mesh-intruder mesh-intruder intruder mesh-intruder)"
+  [[ "$intruder_log" == *MESH_PROBE_DENIED\ status=403* ]] || die "mesh: an unauthorized SPIFFE identity was not denied by the waypoint"
+  pass "mesh: waypoint AuthorizationPolicy rejects the intruder identity with HTTP 403"
 }
 
 prom_query() {
@@ -781,12 +882,20 @@ main() {
   lab up
   LAB_KUBECONFIG="$(lab kubeconfig | tail -n 1)"
   export KUBECONFIG="$LAB_KUBECONFIG"
+  # Keep the R8 mesh demo on this commit while the previous app release is exercised.
+  local registry registry_push
+  registry="$(kubectl -n lab-system get configmap lab-contract -o go-template='{{ index .data "registry" }}')"
+  registry_push="$(kubectl -n lab-system get configmap lab-contract -o go-template='{{ index .data "registry-push" }}')"
+  docker tag dx03v2-api:e2e "$registry_push/dx03v2/api:$GIT_SHA"
+  docker push -q "$registry_push/dx03v2/api:$GIT_SHA" >/dev/null
+  export MESH_IMAGE="$registry/dx03v2/api:$GIT_SHA"
   GIT_SHA="$PREVIOUS_SHA" DEPLOY_IMAGES="dx03v2-api:previous dx03v2-web:previous" DEPLOY_ALLOW_DIRTY=1 \
     bash "$REPO_ROOT/scripts/deploy-local.sh"
   pass "gitops: deployed previous content $PREVIOUS_SHA from distinct image artifacts"
   probe_namespace
   check_db_backup
   check_mesh
+  check_mesh_advanced
   check_observability
   check_tracing
   check_trivy

@@ -109,8 +109,9 @@ build; o harness imprime a contagem completa no resumo de `trivy-image:*` para a
 - Os plurais RBAC `healthcheckpolicies` e `gcpbackendpolicies` e a semântica do status das políticas
   da GKE não foram vistos num cluster; o preflight do deploy acusaria a divergência.
 - `trivy --ignore-unfixed` não bloqueia CVEs sem correção; o agendamento semanal os reavalia.
-- Não há HTTPS no Google Cloud ainda (listener HTTP no Gateway, `planejado`); localmente também não há
-  TLS.
+- No Google Cloud só o perfil full serve HTTPS (certificado gerenciado do Certificate Map do tx03v2, HTTP
+  responde 301); o perfil core continua só em HTTP e, sem execução na nuvem, a emissão do certificado não
+  foi exercitada. Localmente o TLS vem do lab do tx03v2 (cert-manager e CA do lab).
 - Antes do primeiro commit, o `gitleaks` examina só os arquivos visíveis ao git (versionados e não
   ignorados); depois, todo o histórico.
 - O bit executável dos scripts só é checado para arquivos já no índice do git.

@@ -24,7 +24,7 @@ is the source of truth. The full rule list (pt-BR) is [docs/GUARDRAILS.md](docs/
   `e2e-platform`, [docs/LAB_LOCAL.md](docs/LAB_LOCAL.md)); the platform e2e has 19 probes, including
   the R7.2 release rollback drill. It is not cloud-mutating: agents may run it, one heavy run at a time (Docker with 8 GB, or 7 GB with
   `LOCAL_SIZE=small`; `make e2e-platform-small` is meant for the CI runner).
-- The interface with `tx03v2` is [docs/CONTRATO.md](docs/CONTRATO.md) (contract v3, owned by tx03v2; the
+- The interface with `tx03v2` is [docs/CONTRATO.md](docs/CONTRATO.md) (contract v4, owned by tx03v2; the
   local lab has its own local contract, `lab-system/lab-contract`).
 
 ## 2. Non-negotiable rules
@@ -61,9 +61,11 @@ api/                    Express 5 API (src/, migrations/*.sql, test/unit, test/i
 web/                    React 19 page (src/, nginx/default.conf + security-headers.conf, Dockerfile)
 e2e/                    smoke.mjs + lib.mjs: the smoke test for compose, kind, the GKE Gateway and the local platform
 deploy/k8s/base/        Deployments, Services, ConfigMap, PDBs, NetworkPolicies, ServiceAccounts
-deploy/k8s/overlays/    local (kind: namespace, PostgreSQL), gcp, gcp-waf (GKE Autopilot of tx03v2), local-platform
+deploy/k8s/overlays/    local (kind: namespace, PostgreSQL), gcp, gcp-waf, gcp-full, gcp-waf-full (GKE Autopilot of tx03v2), local-platform
 deploy/k8s/components/  gcp (Gateway, HTTPRoute, HealthCheckPolicies, ExternalSecrets, HPA, load
-                        balancer / Cloud SQL / node DNS policies, params), gcp-waf (GCPBackendPolicies) and
+                        balancer / Cloud SQL / node DNS policies, params), gcp-waf (GCPBackendPolicies), gcp-https
+                        (certificate map, HTTP redirect), mesh-demo (the two backends of the mesh exercise), mesh-csm (managed
+                        sidecar mesh, profile full), mesh-full (ambient twin) and
                         local-platform (Istio Gateway, mesh policies, ExternalSecrets, HPA, monitoring, params)
 deploy/k8s/schemas/     kubeconform schemas: Gateway API from the release asset, networking.gke.io
                         from a pinned catalog commit (scripts/update-crd-schemas.sh, never by hand)

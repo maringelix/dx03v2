@@ -1,0 +1,29 @@
+# The two backends of the service-mesh exercise (a stable and a canary build of the same API image, run
+# by api/src/mesh-demo.ts) and the identities of its client and its intruder. Shared by the ambient
+# exercise of the local lab (mesh-full) and by the sidecar exercise of the GKE profile full (mesh-csm).
+# The approved API image comes from the deploy-params ConfigMap that the overlay supplies.
+apiVersion: kustomize.config.k8s.io/v1alpha1
+kind: Component
+labels:
+  - pairs:
+      app.kubernetes.io/part-of: dx03v2
+    includeSelectors: false
+    includeTemplates: true
+resources:
+  - mesh-demo.yaml
+replacements:
+  - source:
+      kind: ConfigMap
+      name: deploy-params
+      fieldPath: data.MESH_IMAGE
+    targets:
+      - select:
+          kind: Deployment
+          name: mesh-stable
+        fieldPaths:
+          - spec.template.spec.containers.[name=main].image
+      - select:
+          kind: Deployment
+          name: mesh-canary
+        fieldPaths:
+          - spec.template.spec.containers.[name=main].image
