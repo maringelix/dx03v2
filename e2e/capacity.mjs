@@ -48,7 +48,7 @@ export async function workload(url, seconds, concurrency) {
     Array.from({ length: concurrency }, async () => {
       while (Date.now() < until) {
         await read();
-        await new Promise((resolve) => setTimeout(resolve, 20));
+        await new Promise((resolve) => setTimeout(resolve, 100));
       }
     }),
   );
