@@ -116,3 +116,7 @@ take the changes of the original, and run `scripts/repo-guardrails.sh` again whe
 Pull requests to the original repository are welcome: see [CONTRIBUTING.md](CONTRIBUTING.md). A
 change to `api/`, `web/` or `e2e/` has to reach the three app repositories (the parity rule of
 AGENTS.md). Workflow runs from forks wait for the maintainer's approval, and the same harness decides.
+
+## R10: capacidade e FinOps
+
+Veja [Capacidade e SLO](docs/FINOPS.md) para carga limitada, HPA up/down, PDB/drain, rightsizing, pool PostgreSQL e showback. Prova Docker em Actions; nada executado na nuvem (v2).

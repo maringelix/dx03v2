@@ -244,3 +244,7 @@ All notable changes to this project are documented here. The format follows
 - The Azure path: `deploy/k8s/components/azure*`, `deploy/k8s/overlays/azure*`, the
   `alb.networking.azure.io` schemas, `scripts/deploy-azure.sh`, `.github/workflows/deploy-azure.yml`,
   kubelogin from the harness tools, and the Azure contract checks and docs.
+
+## R10: capacidade e FinOps
+
+Veja [Capacidade e SLO](docs/FINOPS.md) para carga limitada, HPA up/down, PDB/drain, rightsizing, pool PostgreSQL e showback. Prova Docker em Actions; nada executado na nuvem (v2).
