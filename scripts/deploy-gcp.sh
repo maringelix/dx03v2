@@ -540,6 +540,7 @@ write_params() {
   local params="$WORK_DIR/params.env"
   {
     echo "API_IMAGE=$API_IMAGE"
+    echo "MESH_IMAGE=$API_IMAGE"
     echo "WEB_IMAGE=$WEB_IMAGE"
     echo "GATEWAY_ADDRESS_NAME=$(param gateway/address-name)"
     echo "WAF_SECURITY_POLICY=$(param waf/security-policy)"

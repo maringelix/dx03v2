@@ -15,7 +15,7 @@ replacements:
   - source:
       kind: ConfigMap
       name: deploy-params
-      fieldPath: data.API_IMAGE
+      fieldPath: data.MESH_IMAGE
     targets:
       - select:
           kind: Deployment

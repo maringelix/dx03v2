@@ -882,6 +882,13 @@ main() {
   lab up
   LAB_KUBECONFIG="$(lab kubeconfig | tail -n 1)"
   export KUBECONFIG="$LAB_KUBECONFIG"
+  # Keep the R8 mesh demo on this commit while the previous app release is exercised.
+  local registry registry_push
+  registry="$(kubectl -n lab-system get configmap lab-contract -o go-template='{{ index .data "registry" }}')"
+  registry_push="$(kubectl -n lab-system get configmap lab-contract -o go-template='{{ index .data "registry-push" }}')"
+  docker tag dx03v2-api:e2e "$registry_push/dx03v2/api:$GIT_SHA"
+  docker push -q "$registry_push/dx03v2/api:$GIT_SHA" >/dev/null
+  export MESH_IMAGE="$registry/dx03v2/api:$GIT_SHA"
   GIT_SHA="$PREVIOUS_SHA" DEPLOY_IMAGES="dx03v2-api:previous dx03v2-web:previous" DEPLOY_ALLOW_DIRTY=1 \
     bash "$REPO_ROOT/scripts/deploy-local.sh"
   pass "gitops: deployed previous content $PREVIOUS_SHA from distinct image artifacts"

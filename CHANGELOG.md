@@ -5,6 +5,12 @@ All notable changes to this project are documented here. The format follows
 [Conventional Commits](https://www.conventionalcommits.org/).
 
 ## [Unreleased]
+### Fixed
+
+- The platform rollback exercise keeps the mesh demo on the tested R8 API image while deploying the
+  previous application artifact, whose image predates the demo. The local lab still proves a real
+  rollback of the API and web release.
+
 ### Added
 
 - R8 for the Google Cloud pair, contract version 4 (with tx03v2 R8): the full profile serves HTTPS on the

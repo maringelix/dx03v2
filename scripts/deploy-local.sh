@@ -103,6 +103,7 @@ render() {
   local params="$WORK_DIR/params.env"
   cat >"$params" <<EOF
 API_IMAGE=${C["registry"]}/dx03v2/api:$GIT_SHA
+MESH_IMAGE=${MESH_IMAGE:-${C["registry"]}/dx03v2/api:$GIT_SHA}
 WEB_IMAGE=${C["registry"]}/dx03v2/web:$GIT_SHA
 NETWORK_CIDR=${C["network-cidr"]}
 DB_ENDPOINT_CIDR=${C["db.endpoint-ip"]}/32
