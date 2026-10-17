@@ -1,5 +1,11 @@
 # Harness do dx03v2
 
+## R9 continuity
+
+`make continuity` executa `scripts/continuity-drill.sh` pelo harness. O novo job
+confere o artifact de imagens do próprio `images`, recupera A/B e testa failback.
+[CONTINUIDADE.md](CONTINUIDADE.md) define as assertivas, medidas e limites da prova.
+
 O harness é o conjunto de checks que prova o que este repositório afirma, sem conta na nuvem.
 Ele vive em `scripts/harness.sh`; o `Makefile` e o CI só o chamam. O que passa localmente com
 `HARNESS_STRICT=1` passa no CI (jobs `static`, `test`, `images`, `e2e` e `e2e-platform`: `verificado no CI`) e

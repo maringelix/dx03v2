@@ -1221,6 +1221,12 @@ check_platform_small_e2e() {
   bash scripts/e2e-platform-small.sh
 }
 
+check_continuity() {
+  need docker curl jq openssl sha256sum tar date
+  need_docker
+  bash scripts/continuity-drill.sh
+}
+
 # The alert rules of the local-platform component, tested with promtool (series the API exports and
 # kube-state-metrics; docs/HARNESS.md).
 check_promtool_rules() {
@@ -1289,6 +1295,7 @@ register_checks() {  register static tool-versions check_tool_versions
   register e2e kind-e2e check_kind_e2e
   register platform platform-e2e check_platform_e2e
   register platform-small platform-small-e2e check_platform_small_e2e
+  register continuity continuity-drill check_continuity
 }
 
 # ---------------------------------------------------------------------------------------------
@@ -1358,6 +1365,7 @@ list_checks() {
   echo "  platform the app on the full tx03v2 local platform (GitOps, mesh, observability, policies, backup, chaos)"
   echo "  platform-small the same e2e on the small platform size, inside Docker limited to 7 GB (heavy: CI only)"
   echo "  all     static + test + build + e2e"
+  echo "  continuity independent Docker A/B recovery, fencing and failback with the CI images"
   echo "checks:"
   for i in "${!CHECK_NAME[@]}"; do
     printf '  %-7s %s\n' "${CHECK_STAGE[$i]}" "${CHECK_NAME[$i]}"
@@ -1377,7 +1385,7 @@ main() {
   register_checks
   for arg in "$@"; do
     case "$arg" in
-      static | test | build | dast | e2e | platform | platform-small) stages+=("$arg") ;;
+      static | test | build | dast | e2e | platform | platform-small | continuity) stages+=("$arg") ;;
       all) stages+=(static test build e2e) ;;
       list)
         list_checks

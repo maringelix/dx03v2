@@ -5,6 +5,13 @@ All notable changes to this project are documented here. The format follows
 [Conventional Commits](https://www.conventionalcommits.org/).
 
 ## [Unreleased]
+
+### Added
+
+- R9 independent Docker A/B application recovery: verified backup/configuration, TLS, API database
+  reconnect without restart, live-writer promotion refusal, corrupt archive rejection, primary
+  disk destruction, measured RPO/RTO and fenced failback that preserves new secondary writes.
+  The continuity CI job consumes the exact scanned images; cloud recovery is not yet exercised.
 ### Fixed
 
 - The platform rollback exercise keeps the mesh demo on the tested R8 API image while deploying the

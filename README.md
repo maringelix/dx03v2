@@ -10,6 +10,9 @@ Application half of the Google Cloud DevOps lab: a small message board (Express 
 
 ## What is this
 
+R9 recovery exercises and evidence boundaries are in [docs/CONTINUIDADE.md](docs/CONTINUIDADE.md).
+The Docker A/B job complements the local platform and does not certify managed-cloud recovery.
+
 A public, educational lab you can clone or fork to learn how a small web app is built, tested,
 packaged and deployed to Kubernetes safely. Everything is proven by a local harness that needs no
 cloud account: lint, type checks, unit and integration tests against a real PostgreSQL, image builds
