@@ -28,7 +28,7 @@ jq -e \
 run_attempt="$(jq -er '.run_attempt' <<<"$run_json")"
 jobs_json="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$CI_RUN_ID/jobs?per_page=100")" ||
   die "cannot read required jobs from CI run $CI_RUN_ID"
-for required in static test images e2e e2e-platform; do
+for required in static test images e2e e2e-platform continuity; do
   jq -e --arg name "$required" --argjson attempt "$run_attempt" \
     '[.jobs[] | select(.name == $name and .run_attempt == $attempt and
       .status == "completed" and .conclusion == "success")] | length == 1' \

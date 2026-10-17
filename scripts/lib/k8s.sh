@@ -37,6 +37,8 @@ declare -A K8S_PARAM_PATTERN=(
   [MESH_IMAGE]="^$K8S_GCP_REGION-docker\.pkg\.dev/$K8S_GCP_PROJECT/dx03v2/api(:[0-9a-f]{40}|@sha256:[0-9a-f]{64})\$"
   [WEB_IMAGE]="^$K8S_GCP_REGION-docker\.pkg\.dev/$K8S_GCP_PROJECT/dx03v2/web(:[0-9a-f]{40}|@sha256:[0-9a-f]{64})\$"
   [GATEWAY_ADDRESS_NAME]="^$K8S_GCP_NAME\$"
+  [DB_SECRET_NAME]='^tx03v2-lab(-dr)?-db-app$'
+  [ADMIN_TOKEN_SECRET_NAME]='^tx03v2-lab(-dr)?-app-admin-token$'
   [WAF_SECURITY_POLICY]="^(none|$K8S_GCP_NAME)\$"
   # Fixed in the contract: the sources of the load balancer traffic and health checks, in this order.
   [LB_SOURCE_RANGES]='^35\.191\.0\.0/16,130\.211\.0\.0/22$'

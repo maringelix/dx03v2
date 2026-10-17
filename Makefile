@@ -7,7 +7,7 @@ HARNESS := bash scripts/harness.sh
 # The directory of this Makefile: `clean` removes things under it, wherever make was started from.
 ROOT := $(patsubst %/,%,$(dir $(abspath $(firstword $(MAKEFILE_LIST)))))
 
-.PHONY: help tools static test verify build e2e e2e-platform e2e-platform-small dast all clean
+.PHONY: help tools static test verify build e2e e2e-platform e2e-platform-small continuity dast all clean
 
 help: ## Show the available targets
 	@awk 'BEGIN { FS = ":.*## " } /^[a-z][a-z0-9-]*:.*## / { printf "  %-8s %s\n", $$1, $$2 }' $(MAKEFILE_LIST)
@@ -38,6 +38,9 @@ e2e-platform-small: ## The same e2e on the small platform size inside Docker lim
 
 dast: ## OWASP ZAP Baseline against the disposable Compose app (Docker + network; CI preferred)
 	@$(HARNESS) dast
+
+continuity: ## Independent A/B recovery, writer fencing and failback with the CI images (Docker; CI preferred)
+	@$(HARNESS) continuity
 
 all: ## static + test + build + kind e2e (DAST and full platform e2e are separate)
 	@$(HARNESS) all

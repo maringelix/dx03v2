@@ -1,5 +1,8 @@
 # dx03v2
 
+Recuperação de dados e DR: [docs/CONTINUIDADE.md](docs/CONTINUIDADE.md), com prova A/B
+no Docker, RPO/RTO medidos e seleção do runtime regional preparado pelo contrato v5.
+
 Metade de aplicação do lab de DevOps no Google Cloud: um mural de mensagens pequeno (API Express 5, página React 19, PostgreSQL 17) com containers, manifests Kubernetes para o GKE Autopilot e um teste ponta a ponta em kind.
 
 [![ci](https://github.com/maringelix/dx03v2/actions/workflows/ci.yml/badge.svg)](https://github.com/maringelix/dx03v2/actions/workflows/ci.yml)

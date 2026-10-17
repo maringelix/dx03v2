@@ -52,6 +52,8 @@ if (
 }
 
 const actual = readEnv(actualFile);
+const target = process.env.LAB_TARGET ?? 'primary';
+if (!['primary', 'secondary'].includes(target)) fail('LAB_TARGET must be primary or secondary');
 const example = readEnv(exampleFile);
 const api = image(required(actual, 'API_IMAGE'), 'API_IMAGE');
 const web = image(required(actual, 'WEB_IMAGE'), 'WEB_IMAGE');
@@ -76,6 +78,10 @@ const addPatch = (kind, name, path, value) => {
 };
 
 addPatch('Gateway', 'dx03v2', '/spec/addresses/0/value', required(actual, 'GATEWAY_ADDRESS_NAME'));
+for (let index = 0; index < 5; index++) {
+  addPatch('ExternalSecret', 'db-credentials', `/spec/data/${index}/remoteRef/key`, required(actual, 'DB_SECRET_NAME'));
+}
+addPatch('ExternalSecret', 'app-secrets', '/spec/data/0/remoteRef/key', required(actual, 'ADMIN_TOKEN_SECRET_NAME'));
 for (const name of ['web-ingress-from-lb', 'api-ingress-from-lb']) {
   addPatch('NetworkPolicy', name, '/spec/ingress/0/from/0/ipBlock/cidr', ranges[0]);
   addPatch('NetworkPolicy', name, '/spec/ingress/0/from/1/ipBlock/cidr', ranges[1]);
@@ -110,6 +116,7 @@ if (overlay === 'gcp-waf' || overlay === 'gcp-waf-full') {
 const document = {
   spec: {
     source: {
+      targetRevision: target === 'secondary' ? 'gitops/gcp-dr' : 'gitops/gcp',
       path: `deploy/k8s/overlays/${overlay}`,
       kustomize: {
         images: [apiExample.name + '=' + api.reference, webExample.name + '=' + web.reference],
