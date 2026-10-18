@@ -26,7 +26,7 @@ RUN npm ci --workspace api --include-workspace-root=false --omit=dev --ignore-sc
 
 # gcr.io/distroless/nodejs24-debian13:nonroot (verified 2026-10-10: Node 24.21.0). The debian12
 # variant suggested by the spec is no longer rebuilt (still Node 24.14.0): see docs/ARCHITECTURE.md.
-FROM gcr.io/distroless/nodejs24-debian13:nonroot@sha256:9eeb7f5887d0e239e78264b06f7f11d2e14be534050481803a9e4728fcdd278e AS runtime
+FROM gcr.io/distroless/nodejs24-debian13:nonroot@sha256:59c479c9b8c123e66047315c968aa2d35e31ae5149c856e4110a79c8b3563f0b AS runtime
 ARG GIT_SHA=unknown
 ARG SOURCE_REPOSITORY=maringelix/dx03v2
 LABEL org.opencontainers.image.title="dx03v2-api" \
