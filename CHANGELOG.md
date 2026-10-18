@@ -16,6 +16,8 @@ All notable changes to this project are documented here. The format follows
   request payloads, application logic or Unicode/HTML-escaping fixtures.
 - Align onboarding with current CI publication, exact-digest promotion, protected
   full deployment and explicit secondary recovery. Cloud v2 remains unrun.
+- Pin the actual tx03v2#19 main merge for the English local-platform references;
+  full/small CI exercise the same protected source, preserving the family-ref contract.
 
 ### Fixed
 
