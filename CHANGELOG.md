@@ -6,6 +6,14 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- Pin the local platform to the merged tx03v2 cloud-readiness fixes (#18), including bounded
+  OpenCost allocation retries while metrics become available. The positive measured-cost assertion
+  remains mandatory. Full/small platform CI now consumes the actual merged infrastructure commit,
+  including its image-admission and DR bucket IAM corrections; the application and its contract
+  are unchanged. No Google Cloud run was performed.
+
 ### Added
 
 - Contract v5 regional deployment selection: secondary cluster, private endpoint and Secret
