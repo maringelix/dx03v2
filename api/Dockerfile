@@ -5,7 +5,7 @@
 # Images are pinned by digest; update procedure in docs/MAINTENANCE.md.
 
 # node:24-alpine3.24 (verified 2026-10-10: Node 24.21.0, npm 11.19.0)
-FROM node:24-alpine3.24@sha256:ebfe2f90462722a7a4de65e91990e97fe0d401c70e0e762c5b53302f905ec1c1 AS deps
+FROM node:24-alpine3.24@sha256:44fce696f38ba8c987c4db89954051000bbd05ffd8d8659ba15ed4a8602e937f AS deps
 WORKDIR /app
 COPY package.json package-lock.json .npmrc ./
 COPY api/package.json api/
@@ -17,7 +17,7 @@ COPY api/tsconfig.json api/tsconfig.build.json api/
 COPY api/src api/src
 RUN npm run build --workspace api
 
-FROM node:24-alpine3.24@sha256:ebfe2f90462722a7a4de65e91990e97fe0d401c70e0e762c5b53302f905ec1c1 AS prod-deps
+FROM node:24-alpine3.24@sha256:44fce696f38ba8c987c4db89954051000bbd05ffd8d8659ba15ed4a8602e937f AS prod-deps
 WORKDIR /app
 COPY package.json package-lock.json .npmrc ./
 COPY api/package.json api/
