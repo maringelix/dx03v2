@@ -15,7 +15,7 @@
 # https URL to clone; default: the original tx03v2, set it to your fork, FORK.md), E2E_SKIP_BUILD=1,
 # KEEP_LAB=1, LOCAL_KIND_INTERNAL=1 (inside a container that drives the host Docker daemon),
 # LOCAL_SIZE=small (the size of the tx03v2 platform for 7 GB of Docker memory, proved in the CI by
-# scripts/e2e-platform-small.sh; docs/LAB_LOCAL.md), E2E_DIAGNOSTICS_DIR (default
+# scripts/e2e-platform-small.sh; docs/LOCAL_LAB.md), E2E_DIAGNOSTICS_DIR (default
 # ${TMPDIR:-/tmp}/dx03v2-harness/platform-diagnostics), LOCAL_STATE_DIR (the state of the lab this
 # script creates; default ${XDG_STATE_HOME:-$HOME/.local/state}/dx03v2-platform-local, not the one of
 # `make local-up` in tx03v2: a lab you keep there is never adopted and destroyed by this run).

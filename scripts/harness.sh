@@ -30,7 +30,7 @@ HARNESS_ONLY="${HARNESS_ONLY:-}"
 IMAGE_TAG="${IMAGE_TAG:-e2e}"
 IMAGES_PREBUILT="${IMAGES_PREBUILT:-0}"
 
-# Pinned schema sources of kubeconform (update procedure: docs/SUSTENTACAO.md). The schemas of the
+# Pinned schema sources of kubeconform (update procedure: docs/MAINTENANCE.md). The schemas of the
 # Gateway API and of the GKE policies are in deploy/k8s/schemas (scripts/update-crd-schemas.sh,
 # check crd-schemas) and take precedence over the catalog, which provides the ESO ones.
 K8S_SCHEMA_KUBERNETES_VERSION="1.36.0"
@@ -40,7 +40,7 @@ CRD_SCHEMA_REF="63669a570e231d4f1f8396d229a1de512bcf0a34" # datreeio/CRDs-catalo
 TEST_POSTGRES_IMAGE="postgres:17-alpine@sha256:b0f9560a2de083e2cc7382e75f808c7381a32852a7ec49117deedb300e552b24"
 # Scanner ignores must be reviewed at least every ~7 months.
 TRIVYIGNORE_MAX_DAYS=214
-# Placeholders of the contract (docs/CONTRATO.md): the only project ID that may appear, and the only
+# Placeholders of the contract (docs/CONTRACT.md): the only project ID that may appear, and the only
 # public addresses: the sources of the traffic and health checks of the global external Application
 # Load Balancer (Parameter Manager key lb-source-ranges) and the NodeLocal DNSCache name server.
 PLACEHOLDER_PROJECT="tx03v2-lab-example"
@@ -65,7 +65,7 @@ CONTRACT_PARAMETER_KEYS=(
 CONTRACT_CLOUDSQL_ROOT_SHA256=C7B0FCD282B346F1FCC45EE8A79ECF6EF6FAEF2D669BEEC664293B93D83E59BE
 
 REQUIRED_FILES=(
-  README.md README.pt-BR.md AGENTS.md CLAUDE.md CONTRIBUTING.md SECURITY.md CHANGELOG.md LICENSE FORK.md
+  README.md AGENTS.md CLAUDE.md CONTRIBUTING.md SECURITY.md CHANGELOG.md LICENSE FORK.md
   .editorconfig .gitattributes .gitignore .pre-commit-config.yaml Makefile .trivyignore.yaml
   .nvmrc .npmrc .prettierrc .prettierignore eslint.config.js package.json package-lock.json
   .dockerignore api/Dockerfile api/Dockerfile.dockerignore web/Dockerfile web/Dockerfile.dockerignore
@@ -74,8 +74,8 @@ REQUIRED_FILES=(
   .github/CODEOWNERS .github/dependabot.yml .github/pull_request_template.md
   .github/ISSUE_TEMPLATE/config.yml .github/ISSUE_TEMPLATE/bug_report.yml .github/ISSUE_TEMPLATE/cloud_run_report.yml
   .github/workflows/ci.yml .github/workflows/deploy-gcp.yml .github/workflows/publish-images.yml .github/rulesets/main.json
-  docs/SUSTENTACAO.md docs/GUARDRAILS.md docs/HARNESS.md docs/CONTRATO.md docs/RUNBOOK.md docs/SEGURANCA_CI.md docs/MIGRATIONS.md
-  docs/ARQUITETURA.md docs/API.md docs/PUBLICACAO.md
+  docs/MAINTENANCE.md docs/GUARDRAILS.md docs/HARNESS.md docs/CONTRACT.md docs/RUNBOOK.md docs/CI_SECURITY.md docs/MIGRATIONS.md
+  docs/ARCHITECTURE.md docs/API.md docs/PUBLISHING.md
   tools/versions.env tools/checksums.txt
   scripts/install-tools.sh scripts/update-tool-checksums.sh scripts/harness.sh scripts/repo-guardrails.sh
   scripts/check-codeql-sarif.mjs scripts/dast-zap.sh scripts/get-publish-run-metadata.sh scripts/install-crane.sh
@@ -255,15 +255,25 @@ check_repo_structure() {
     echo "README.md: more than 250 lines"
     rc=1
   fi
-  forbid 'production-grade|production-ready|enterprise|best-in-class|world-class|battle-tested' "self-ratings in the READMEs" '*' README.md README.pt-BR.md || rc=1
+  forbid 'production-grade|production-ready|enterprise|best-in-class|world-class|battle-tested' "self-ratings in README.md" '*' README.md || rc=1
   grep -qF 'not run in the cloud (v2)' README.md || {
     echo "README.md: the status matrix must use the label 'not run in the cloud (v2)'"
     rc=1
   }
-  grep -qF 'não executado em nuvem (v2)' README.pt-BR.md || {
-    echo "README.pt-BR.md: the status matrix must use the label 'não executado em nuvem (v2)'"
+  if [[ -f README.pt-BR.md ]]; then
+    echo "README.pt-BR.md: use the single English README.md"
     rc=1
-  }
+  fi
+  for f in README.md AGENTS.md; do
+    if ! grep -qF 'All public documentation is written in English.' "$f"; then
+      echo "$f: declare the English documentation policy"
+      rc=1
+    fi
+    if ! grep -qF 'https://github.com/maringelix/tx00v2/blob/main/docs/GETTING_STARTED.md' "$f"; then
+      echo "$f: link the central getting started guide"
+      rc=1
+    fi
+  done
   need git
   grep -qP 'x' <<<"x" 2>/dev/null || skip "grep -P (PCRE) is not available"
   while IFS= read -r f; do
@@ -399,10 +409,10 @@ check_policy_identifiers() {
 }
 
 # Nothing of another cloud may remain: dx03v2 started as a copy of the Azure app dx02v2, itself a
-# copy of the AWS app dx01v2. Only the docs that compare the lab family (README, ARQUITETURA,
+# copy of the AWS app dx01v2. Only the docs that compare the lab family (README, ARCHITECTURE,
 # CHANGELOG) may name those clouds; this file and scripts/check-manifests.mjs hold the patterns
 # themselves. api/ and web/ stay identical to dx02v2 apart from the names (parity routine,
-# docs/SUSTENTACAO.md), and a few of their comments describe the edge of dx02v2: the Azure patterns
+# docs/MAINTENANCE.md), and a few of their comments describe the edge of dx02v2: the Azure patterns
 # skip them, the AWS patterns do not. VPC is a Google Cloud term too, so it is not an AWS marker.
 CLOUD_AWS_RE='(^|[^a-z0-9])(aws|eks|ecr|rds|ssm|acm|cloudwatch|route ?53)([^a-z0-9]|$)|amazon|wafv2|elbv2|alb\.ingress|secrets manager|us-(east|west)-[12]|tx01v2'
 CLOUD_AZURE_RE='(^|[^a-z0-9])(azure|aks|agc|acr|appconfig|azconfig|kubelogin|tx02v2)([^a-z0-9]|$)|azurecr|keyvault|alb\.networking|az (login|aks|acr|appconfig|keyvault)'
@@ -417,20 +427,20 @@ check_policy_cloud() {
     printf 'files of another cloud path:\n%s\n' "$out"
     rc=1
   }
-  mapfile -t files < <(visible_files | grep -vxE 'README(\.pt-BR)?\.md|docs/ARQUITETURA\.md|CHANGELOG\.md|scripts/harness\.sh|scripts/check-manifests\.mjs|package-lock\.json')
+  mapfile -t files < <(visible_files | grep -vxE 'README\.md|docs/ARCHITECTURE\.md|CHANGELOG\.md|scripts/harness\.sh|scripts/check-manifests\.mjs|package-lock\.json')
   ((${#files[@]} > 0)) || return 0
   out="$(grep -nHiE "$CLOUD_AWS_RE" "${files[@]}")" || true
   [[ -z "$out" ]] || {
-    printf 'leftovers of AWS (dx03v2 is the Google Cloud app; see docs/ARQUITETURA.md for the comparison):\n%s\n' "$out"
+    printf 'leftovers of AWS (dx03v2 is the Google Cloud app; see docs/ARCHITECTURE.md for the comparison):\n%s\n' "$out"
     rc=1
   }
   mapfile -t outside_app < <(printf '%s\n' "${files[@]}" | grep -vE '^(api|web)/')
   out="$( (grep -nHiE "$CLOUD_AZURE_RE" "${outside_app[@]}"; grep -nHE "$CLOUD_AZURE_NAMES_RE" "${outside_app[@]}") | sort -u)" || true
   [[ -z "$out" ]] || {
-    printf 'leftovers of Azure (dx03v2 is the Google Cloud app; see docs/ARQUITETURA.md for the comparison):\n%s\n' "$out"
+    printf 'leftovers of Azure (dx03v2 is the Google Cloud app; see docs/ARCHITECTURE.md for the comparison):\n%s\n' "$out"
     rc=1
   }
-  summary "no leftovers of another cloud in ${#files[@]} files (README, ARQUITETURA and CHANGELOG compare the lab family; api/ and web/ follow dx02v2)"
+  summary "no leftovers of another cloud in ${#files[@]} files (README, ARCHITECTURE and CHANGELOG compare the lab family; api/ and web/ follow dx02v2)"
   return "$rc"
 }
 
@@ -566,7 +576,7 @@ check_policy_workflows() {
     rc=1
   }
   grep -qE '^  deploy:[[:space:]]*$' "$wf" || {
-    echo "$wf: the job id must stay deploy (docs/PUBLICACAO.md)"
+    echo "$wf: the job id must stay deploy (docs/PUBLISHING.md)"
     rc=1
   }
   [[ "$(grep -c 'id-token: write' "$wf")" == 1 && "$(grep -cE '^      id-token: write$' "$wf")" == 1 ]] || {
@@ -683,7 +693,7 @@ check_policy_images() {
   return "$rc"
 }
 
-# Regressions of v1 that must never come back (docs/ARQUITETURA.md, "v1 -> v2").
+# Regressions of v1 that must never come back (docs/ARCHITECTURE.md, "v1 -> v2").
 check_policy_app() {
   local rc=0
   forbid "trust proxy['\"]?[[:space:]]*,[[:space:]]*true" "trust proxy must be a hop count (TRUST_PROXY_HOPS), never true" '*.ts' api/src || rc=1
@@ -810,7 +820,7 @@ check_kubeconform() {
   summary "kubeconform -strict (Kubernetes $K8S_SCHEMA_KUBERNETES_VERSION): $(for o in "${K8S_OVERLAYS[@]}"; do printf '%s: %s; ' "$o" "$(grep -oE '[0-9]+ resources found.*' "$dir/$o.summary")"; done)"
 }
 
-# The contract (docs/CONTRATO.md): the rendered manifests use exactly the agreed names, ranges and
+# The contract (docs/CONTRACT.md): the rendered manifests use exactly the agreed names, ranges and
 # ports (scripts/check-manifests.mjs), and the parameter validation refuses anything else.
 check_contract_app() {
   local dir="$HARNESS_WORK_DIR/k8s-contract" rc=0 bad key what overlay example refused=0
@@ -909,7 +919,7 @@ check_contract_app() {
 check_contract_deploy_script() {
   local deploy=$DEPLOY_SCRIPT rc=0 keys line fixed out
   grep -qxF "CONTRACT_PARAMETER=$CONTRACT_PARAMETER_NAME" "$deploy" || {
-    echo "$deploy must read the Parameter Manager parameter $CONTRACT_PARAMETER_NAME (docs/CONTRATO.md)"
+    echo "$deploy must read the Parameter Manager parameter $CONTRACT_PARAMETER_NAME (docs/CONTRACT.md)"
     rc=1
   }
   keys="$(awk '/^CONTRACT_KEYS=\(/ { s = 1; next } s && /^\)/ { exit } s { for (i = 1; i <= NF; i++) print $i }' "$deploy" | sort)"
@@ -924,13 +934,13 @@ check_contract_deploy_script() {
     "CONTRACT_LB_SOURCE_RANGES=$LB_SOURCE_RANGES" "CONTRACT_WAF_POLICY=tx03v2-lab-waf" \
     "CONTRACT_DEPLOY_ACCOUNT=dx03v2-gha-deploy" "GATEWAY_CLASS=gke-l7-global-external-managed"; do
     grep -qxF "$fixed" "$deploy" || {
-      echo "$deploy must check $fixed (docs/CONTRATO.md)"
+      echo "$deploy must check $fixed (docs/CONTRACT.md)"
       rc=1
     }
   done
   for line in "        key: tx03v2-lab-db-app" "        key: tx03v2-lab-app-admin-token" "    name: gcp-secret-manager"; do
     grep -qxF "$line" deploy/k8s/components/gcp/externalsecrets.yaml || {
-      echo "deploy/k8s/components/gcp/externalsecrets.yaml must use '${line#"${line%%[! ]*}"}' like $deploy (docs/CONTRATO.md)"
+      echo "deploy/k8s/components/gcp/externalsecrets.yaml must use '${line#"${line%%[! ]*}"}' like $deploy (docs/CONTRACT.md)"
       rc=1
     }
   done
@@ -941,11 +951,11 @@ check_contract_deploy_script() {
     }
   done
   grep -qxF "CLOUDSQL_ROOT_SHA256=$CONTRACT_CLOUDSQL_ROOT_SHA256" "$deploy" || {
-    echo "$deploy must trust only the Cloud SQL root with SHA-256 $CONTRACT_CLOUDSQL_ROOT_SHA256 (docs/CONTRATO.md)"
+    echo "$deploy must trust only the Cloud SQL root with SHA-256 $CONTRACT_CLOUDSQL_ROOT_SHA256 (docs/CONTRACT.md)"
     rc=1
   }
   grep -qxF 'CLOUDSQL_CA_URL_BASE=https://storage.googleapis.com/cloudsql-ca-bundles' "$deploy" || {
-    echo "$deploy must download the regional bundle from https://storage.googleapis.com/cloudsql-ca-bundles (docs/CONTRATO.md)"
+    echo "$deploy must download the regional bundle from https://storage.googleapis.com/cloudsql-ca-bundles (docs/CONTRACT.md)"
     rc=1
   }
   (($(grep -cE '^[A-Z0-9_]+=[0-9A-Fa-f]{64}$' "$deploy") == 1)) || {

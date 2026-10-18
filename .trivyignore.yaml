@@ -1,4 +1,4 @@
-# Deliberate lab trade-offs only (docs/GUARDRAILS.md, section "Exceções"). Every entry needs a
+# Deliberate lab trade-offs only (docs/GUARDRAILS.md, section "Exceptions"). Every entry needs a
 # `statement` and an `expired_at` at most ~7 months ahead; scripts/harness.sh enforces both and
 # trivy stops honoring an entry after its expiry date. No exception is needed today: the image and
 # config scans pass without ignores (verified 2026-10-10).

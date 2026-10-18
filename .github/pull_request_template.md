@@ -10,7 +10,7 @@
 - [ ] No new scanner ignore, or each new one has `statement` + `expired_at` and is explained below
 - [ ] No coverage threshold lowered and no check disabled or skipped
 - [ ] No IAM role, network (NetworkPolicy, Gateway, HTTPRoute, Cloud Armor), RBAC or CORS widening, or the reason is stated below
-- [ ] Contract (docs/CONTRATO.md) unchanged, or version bumped with a coordinated tx03v2 PR linked below
+- [ ] Contract (docs/CONTRACT.md) unchanged, or version bumped with a coordinated tx03v2 PR linked below
 - [ ] App changes (`api/`, `web/`, `e2e/`) ported to dx01v2 and dx02v2 too, or the reason they stay Google Cloud-only is stated below
 - [ ] Every new dependency, action or image is pinned (exact npm version + lockfile / commit SHA / digest)
 - [ ] No secrets or real identifiers (project IDs or numbers, service account e-mails, IPs, e-mails) in code, docs or examples

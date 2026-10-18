@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 # The platform e2e (scripts/e2e-platform.sh) on the small size of the tx03v2 platform (LOCAL_SIZE=small),
 # inside a Docker daemon limited to SMALL_MEMORY of memory and no swap (Docker-in-Docker): the proof
-# that the platform and this app fit in the Docker memory of a laptop (docs/LAB_LOCAL.md). Harness
+# that the platform and this app fit in the Docker memory of a laptop (docs/LOCAL_LAB.md). Harness
 # stage platform-small, CI job e2e-platform-small. The e2e is the gate; it prints the peak memory of
 # the daemon and of the largest containers, and the processes the kernel OOM-killed, if any.
 # HEAVY: it needs SMALL_MEMORY free on top of everything else the machine runs, and the inner daemon
 # pulls every image of the lab again. It is meant for the CI runner (16 GB). On a 16 GB laptop that
 # also runs an editor and a browser, do not run it: use e2e-platform with LOCAL_SIZE=small.
-# Environment: SMALL_MEMORY (default 7g, the size measured in docs/LAB_LOCAL.md), E2E_SKIP_BUILD=1
+# Environment: SMALL_MEMORY (default 7g, the size measured in docs/LOCAL_LAB.md), E2E_SKIP_BUILD=1
 # (copies dx03v2-api:e2e and dx03v2-web:e2e from the outer Docker instead of building them inside),
 # TX03V2_REPO (as in e2e-platform.sh), E2E_DIAGNOSTICS_DIR (default
 # ${TMPDIR:-/tmp}/dx03v2-harness/platform-diagnostics).

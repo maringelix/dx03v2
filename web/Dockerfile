@@ -1,7 +1,7 @@
 # dx03v2 web image. Build context: repository root (npm workspaces, one root lockfile):
 #   docker build -f web/Dockerfile --build-arg GIT_SHA="$(git rev-parse HEAD)" -t dx03v2-web:local .
 # Runtime: nginx-unprivileged (uid 101) on port 8080, our own server config, read-only root
-# filesystem friendly (writes only to /tmp). Images are pinned by digest (docs/SUSTENTACAO.md).
+# filesystem friendly (writes only to /tmp). Images are pinned by digest (docs/MAINTENANCE.md).
 
 # node:24-alpine3.24 (verified 2026-10-10: Node 24.21.0, npm 11.19.0)
 FROM node:24-alpine3.24@sha256:ebfe2f90462722a7a4de65e91990e97fe0d401c70e0e762c5b53302f905ec1c1 AS build

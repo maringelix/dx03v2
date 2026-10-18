@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Deploys dx03v2 to the local lab of tx03v2 (kind + the full platform, docs/LAB_LOCAL.md),
+# Deploys dx03v2 to the local lab of tx03v2 (kind + the full platform, docs/LOCAL_LAB.md),
 # the GitOps way: images to the lab registry, rendered manifests to the GitOps repository of the lab
 # git server, an Argo CD Application that syncs them. LOCAL ONLY: it never talks to Google Cloud.
 # Needs kubectl, git, ssh and docker, and KUBECONFIG pointing at the lab cluster

@@ -39,8 +39,8 @@ export function MessageForm({ onSubmit }: Props) {
     <form className="message-form" noValidate onSubmit={(event) => void handleSubmit(event)}>
       <Field
         id="author"
-        label="Seu nome"
-        hint={`De 1 a ${AUTHOR_MAX} caracteres (${draft.author.trim().length}/${AUTHOR_MAX}).`}
+        label="Your name"
+        hint={`1 to ${AUTHOR_MAX} characters (${draft.author.trim().length}/${AUTHOR_MAX}).`}
         value={draft.author}
         error={errors.author}
         autoComplete="nickname"
@@ -48,15 +48,15 @@ export function MessageForm({ onSubmit }: Props) {
       />
       <Field
         id="text"
-        label="Mensagem"
-        hint={`De 1 a ${TEXT_MAX} caracteres (${draft.text.trim().length}/${TEXT_MAX}).`}
+        label="Message"
+        hint={`1 to ${TEXT_MAX} characters (${draft.text.trim().length}/${TEXT_MAX}).`}
         value={draft.text}
         error={errors.text}
         autoComplete="off"
         onChange={update('text')}
       />
       <button type="submit" className="button primary" disabled={submitting}>
-        {submitting ? 'Publicando…' : 'Publicar'}
+        {submitting ? 'Publishing…' : 'Publish'}
       </button>
     </form>
   );

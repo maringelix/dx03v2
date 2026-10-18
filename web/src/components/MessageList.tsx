@@ -8,14 +8,14 @@ interface Props {
   onDelete: (message: Message) => void;
 }
 
-const dateFormat = new Intl.DateTimeFormat('pt-BR', { dateStyle: 'short', timeStyle: 'short' });
+const dateFormat = new Intl.DateTimeFormat('en-US', { dateStyle: 'short', timeStyle: 'short' });
 
 export function MessageList({ items, loading, adminMode, onDelete }: Props) {
   if (loading) {
-    return <p className="muted">Carregando mensagens…</p>;
+    return <p className="muted">Loading messages…</p>;
   }
   if (items.length === 0) {
-    return <p className="muted">Nenhuma mensagem ainda. Seja a primeira pessoa a escrever.</p>;
+    return <p className="muted">No messages yet. Be the first to write one.</p>;
   }
   return (
     <ol className="messages">
@@ -32,12 +32,12 @@ export function MessageList({ items, loading, adminMode, onDelete }: Props) {
               <button
                 type="button"
                 className="button danger"
-                aria-label={`Apagar a mensagem de ${message.author}`}
+                aria-label={`Delete message by ${message.author}`}
                 onClick={() => {
                   onDelete(message);
                 }}
               >
-                Apagar
+                Delete
               </button>
             )}
           </article>

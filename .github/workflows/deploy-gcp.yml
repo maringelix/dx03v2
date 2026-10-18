@@ -148,7 +148,7 @@ jobs:
           fi
           if (("${#problems[@]}" > 0)); then
             printf '::error::Repository variable problem: %s\n' "${problems[@]}"
-            echo "::error::Settings > Secrets and variables > Actions > Variables; see docs/RUNBOOK.md (section 'Variáveis do GitHub')."
+            echo "::error::Settings > Secrets and variables > Actions > Variables; see docs/RUNBOOK.md (section 'GitHub variables and IAM')."
             exit 1
           fi
 

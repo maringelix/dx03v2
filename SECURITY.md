@@ -3,7 +3,7 @@
 ## Reporting a vulnerability
 
 Report privately through GitHub: **Security > Report a vulnerability** on this repository (private
-vulnerability reporting is enabled when the repository is public, see `docs/PUBLICACAO.md`). Do not
+vulnerability reporting is enabled when the repository is public, see `docs/PUBLISHING.md`). Do not
 open a public issue. Never include credentials, admin tokens, project IDs or numbers, service account
 e-mails or IP addresses; use placeholders.
 
@@ -31,8 +31,8 @@ The rules, where each one is enforced and the known limits are in
   `<client-ip>,<lb-ip>` format of the Google Cloud load balancer with two trusted hops), admin token
   compared in constant time and never logged, credentials redacted from logs.
 - Web: strict Content-Security-Policy without inline scripts or styles, security headers on every
-  response including static assets, HSTS only for requests that arrived over HTTPS (the Gateway has
-  no HTTPS listener yet, so no HSTS is sent there).
+  response including static assets, HSTS only for requests that arrived over HTTPS.
+  Core Gateway remains HTTP; full implements managed HTTPS and redirect.
 - Containers run as numeric non-root users with a read-only root filesystem; the API runtime image
   is distroless (no shell, no npm). Kubernetes: Pod Security `restricted`, default-deny
   NetworkPolicies (enforcement proven on kind), no service account tokens; on Google Cloud the pods
@@ -52,6 +52,6 @@ The rules, where each one is enforced and the known limits are in
 The Google Cloud deploy has never run (`not run in the cloud (v2)`); it was exercised offline with
 stub CLIs only. The admin token is a single shared bearer token (no users, no rotation automation).
 The write rate limit is kept in memory per API replica, so the effective limit grows with the number
-of replicas. The smoke test reads the admin token from the Secret `app-secrets`, so whoever can
-dispatch the deploy can see it. The kind e2e proves NetworkPolicy enforcement with kindnet, not with
-GKE Dataplane V2. There is no HTTPS yet. See the "Limites" section of docs/GUARDRAILS.md.
+of replicas. Cloud smoke never reads or sends the admin token; credentialed DELETE is skipped.
+The kind e2e proves kindnet NetworkPolicy, not GKE Dataplane V2. Full HTTPS certificate
+issuance and managed admission remain unrun. See the "Limits" section of docs/GUARDRAILS.md.

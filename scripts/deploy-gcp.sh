@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Deploys dx03v2 to the GKE Autopilot lab cluster of tx03v2 (docs/CONTRATO.md).
+# Deploys dx03v2 to the GKE Autopilot lab cluster of tx03v2 (docs/CONTRACT.md).
 # CLOUD-MUTATING and billable: promotes signed image digests to Artifact Registry and makes the GKE Gateway
 # controller program a global external Application Load Balancer (forwarding rule, backend
 # services, NEGs and, with the WAF, the Cloud Armor policy of tx03v2), which with Cloud SQL is the
@@ -132,13 +132,13 @@ param() { printf '%s' "${PARAM[$1]}"; }
 # expect_param KEY VALUE -> the fixed names of the contract (never identifiers, safe to print).
 expect_param() {
   [[ "$(param "$1")" == "$2" ]] ||
-    die "contract key $1 is '$(param "$1")' but the manifests expect '$2' (docs/CONTRATO.md)"
+    die "contract key $1 is '$(param "$1")' but the manifests expect '$2' (docs/CONTRACT.md)"
 }
 
 # expect_format KEY REGEX -> values that carry identifiers are validated without printing them.
 expect_format() {
   [[ "$(param "$1")" =~ $2 ]] ||
-    die "contract key $1 of $CONTRACT_PARAMETER does not have the format of the contract (docs/CONTRATO.md)"
+    die "contract key $1 of $CONTRACT_PARAMETER does not have the format of the contract (docs/CONTRACT.md)"
 }
 
 ipv4_to_int() {
@@ -290,7 +290,7 @@ read_contract() {
       const extra = got.filter((k) => !want.includes(k));
       const missing = want.filter((k) => !got.includes(k));
       if (extra.length || missing.length) {
-        console.error(`the contract keys differ from docs/CONTRATO.md: missing [${missing}], unknown [${extra}]`);
+        console.error(`the contract keys differ from docs/CONTRACT.md: missing [${missing}], unknown [${extra}]`);
         process.exit(3);
       }
       for (const [k, v] of Object.entries(doc)) {
@@ -300,14 +300,14 @@ read_contract() {
         }
         console.log(`${k}\t${v}`);
       }
-    });' "${CONTRACT_KEYS[@]}" <<<"$json")" || die "$CONTRACT_PARAMETER does not hold the contract key set (docs/CONTRATO.md)"
+    });' "${CONTRACT_KEYS[@]}" <<<"$json")" || die "$CONTRACT_PARAMETER does not hold the contract key set (docs/CONTRACT.md)"
   while IFS=$'\t' read -r key value; do
     if [[ -n "$key" ]]; then
       PARAM[$key]=$value
     fi
   done <<<"$lines"
   for n in "${CONTRACT_KEYS[@]}"; do
-    [[ -n "${PARAM[$n]:-}" ]] || die "the contract key $n is missing in $CONTRACT_PARAMETER (docs/CONTRATO.md)"
+    [[ -n "${PARAM[$n]:-}" ]] || die "the contract key $n is missing in $CONTRACT_PARAMETER (docs/CONTRACT.md)"
   done
   mask "$(param deploy/service-account)"
   [[ "$(param project-id)" == "$GCP_PROJECT_ID" ]] ||
@@ -336,21 +336,21 @@ read_contract() {
   fi
   if [[ "$PLATFORM_PROFILE" == full ]]; then
     [[ "$(param dns/hostname)" != disabled ]] ||
-      die "profile full requires the public edge of tx03v2 (dns_zone_name and app_domain_name; docs/CONTRATO.md)"
+      die "profile full requires the public edge of tx03v2 (dns_zone_name and app_domain_name; docs/CONTRACT.md)"
     [[ "$(param mesh/management)" == managed ]] ||
-      die "profile full requires the managed Cloud Service Mesh of tx03v2 (enable_managed_mesh; docs/CONTRATO.md)"
+      die "profile full requires the managed Cloud Service Mesh of tx03v2 (enable_managed_mesh; docs/CONTRACT.md)"
   fi
   DNS_HOSTNAME="$(param dns/hostname)"
   CERT_MAP="$(param dns/certificate-map)"
   # The nodes subnet is RFC 1918 (validated by tx03v2) and the Private Service Connect endpoint of
   # Cloud SQL is one of its addresses: the egress NetworkPolicy allows exactly that /32.
   [[ "$(param nodes-subnet-cidr)" =~ ${K8S_PARAM_PATTERN[DB_ENDPOINT_IP]%\$}/ ]] ||
-    die "contract key nodes-subnet-cidr is not an RFC 1918 range (docs/CONTRATO.md)"
+    die "contract key nodes-subnet-cidr is not an RFC 1918 range (docs/CONTRACT.md)"
   ipv4_in_cidr "$(param db/endpoint-ip)" "$(param nodes-subnet-cidr)" ||
     die "contract key db/endpoint-ip is not inside nodes-subnet-cidr (the Cloud SQL endpoint is an address of the nodes subnet)"
   REGISTRY_HOST="$(param region)-docker.pkg.dev"
   [[ "$(param artifact-registry/repository)" == "$REGISTRY_HOST/$GCP_PROJECT_ID/dx03v2" ]] ||
-    die "contract key artifact-registry/repository is not <region>-docker.pkg.dev/<project>/dx03v2 (docs/CONTRATO.md)"
+    die "contract key artifact-registry/repository is not <region>-docker.pkg.dev/<project>/dx03v2 (docs/CONTRACT.md)"
   if [[ "$(param waf/security-policy)" == none ]]; then
     OVERLAY=gcp
   fi
@@ -373,7 +373,7 @@ connect_cluster() {
   # (roles/container.clusterViewer of the contract); kubectl authenticates through gke-gcloud-auth-plugin.
   gcloud container clusters get-credentials "$(param cluster-name)" --location "$(param region)" \
     --project "$GCP_PROJECT_ID" --dns-endpoint >/dev/null ||
-    die "cannot fetch the credentials of $(param cluster-name) (this identity needs roles/container.clusterViewer, docs/CONTRATO.md)"
+    die "cannot fetch the credentials of $(param cluster-name) (this identity needs roles/container.clusterViewer, docs/CONTRACT.md)"
   # Discovery is open to every authenticated user: the API groups of the platform layer must be served.
   versions="$(kubectl api-versions)" || die "cannot reach the API server of $(param cluster-name) with this identity"
   for resource in gateway.networking.k8s.io/v1 networking.gke.io/v1 external-secrets.io/v1; do
