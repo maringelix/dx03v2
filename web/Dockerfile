@@ -4,7 +4,7 @@
 # filesystem friendly (writes only to /tmp). Images are pinned by digest (docs/MAINTENANCE.md).
 
 # node:24-alpine3.24 (verified 2026-10-10: Node 24.21.0, npm 11.19.0)
-FROM node:24-alpine3.24@sha256:ebfe2f90462722a7a4de65e91990e97fe0d401c70e0e762c5b53302f905ec1c1 AS build
+FROM node:24-alpine3.24@sha256:44fce696f38ba8c987c4db89954051000bbd05ffd8d8659ba15ed4a8602e937f AS build
 WORKDIR /app
 COPY package.json package-lock.json .npmrc ./
 COPY api/package.json api/
