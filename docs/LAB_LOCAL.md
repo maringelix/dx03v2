@@ -30,6 +30,13 @@ repositório `TX03V2_REPO`, `FORK.md`). `KEEP_LAB=1` mantém o lab no fim (`bash
 Dentro de um contêiner que usa o Docker do host, exporte `LOCAL_KIND_INTERNAL=1`. Precisa de Docker com
 8 GB de memória, ou 7 GB com `LOCAL_SIZE=small`.
 
+O pin atual integra o [tx03v2#18](https://github.com/maringelix/tx03v2/pull/18), já
+mesclado em `main`: `3b702c3524e195d13addd72ee61d0f462623267c`. Além das correções
+de prontidão cloud, o drill local aguarda a disponibilidade das métricas OpenCost
+com tentativas limitadas; custo positivo medido continua obrigatório. Os jobs de
+plataforma full/small usam esse mesmo commit, preservando o contrato e o código do
+app. O resultado local não homologa IAM, admissão ou DR no Google Cloud.
+
 Com o lab do tx03v2 já de pé (`make local-up` lá), o deploy sozinho:
 
 ```bash
