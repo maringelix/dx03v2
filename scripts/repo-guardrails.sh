@@ -203,7 +203,7 @@ main() {
     step "private vulnerability reporting" gh api --method PUT "repos/$repo/private-vulnerability-reporting"
     step "approval of workflow runs from forks of every external contributor" fork_pr_approval "$repo"
   else
-    SKIPPED+=("ruleset, secret scanning + push protection, private vulnerability reporting and fork run approval: the repository is $visibility (private repositories on the Free plan have none of them); re-run after making it public (docs/PUBLICACAO.md)")
+    SKIPPED+=("ruleset, secret scanning + push protection, private vulnerability reporting and fork run approval: the repository is $visibility (private repositories on the Free plan have none of them); re-run after making it public (docs/PUBLISHING.md)")
   fi
   # The environment is what the cloud workflows authenticate through: it is never skipped. A private
   # repository without environment reviewers (Free plan) fails here, on purpose.

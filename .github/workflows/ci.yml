@@ -375,7 +375,7 @@ jobs:
 
   # The same platform e2e on the small size of tx03v2 (LOCAL_SIZE=small), inside a Docker daemon
   # limited to 7 GB without swap (Docker-in-Docker, scripts/e2e-platform-small.sh): the proof that a
-  # laptop with 7 GB for Docker runs it (docs/LAB_LOCAL.md). It also reports any OOM kill. Not a
+  # laptop with 7 GB for Docker runs it (docs/LOCAL_LAB.md). It also reports any OOM kill. Not a
   # required check: e2e-platform (default size) is the gate.
   e2e-platform-small:
     needs: images

@@ -2,7 +2,7 @@
 // using `trust proxy = TRUST_PROXY_HOPS`: only the entries appended by trusted proxies count, so
 // a client cannot pick its own identity by sending spoofed leftmost entries.
 // The counter lives in memory, per process: with N replicas the effective limit is up to N times
-// higher (documented in docs/ARQUITETURA.md).
+// higher (documented in docs/ARCHITECTURE.md).
 import type { RequestHandler } from 'express';
 import { rateLimit } from 'express-rate-limit';
 import { errorBody } from '../errors.ts';

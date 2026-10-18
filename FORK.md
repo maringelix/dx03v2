@@ -8,8 +8,9 @@ what is specific to the app.
 
 What is proven, and how, is in the [status matrix](README.md#status-matrix). In short: the harness,
 the kind e2e and the app on the local platform are `verified in CI`; the Google Cloud deploy of v2 is
-`not run in the cloud (v2)`. Most documents under `docs/` are in Brazilian Portuguese; this page, the
-README, AGENTS.md and CONTRIBUTING.md are in English.
+`not run in the cloud (v2)`. All public documentation is in English. The
+[complete family guide](https://github.com/maringelix/tx00v2/blob/main/docs/GETTING_STARTED.md)
+covers account preparation, variables/secrets and the full CI/publication/deployment sequence.
 
 ## 1-3. The steps both repositories share
 
@@ -42,11 +43,11 @@ make e2e-platform              # the app on the full local platform of tx03v2, t
 
 You need Node.js 24 (`.nvmrc`) and Docker besides the tools of `make tools`; the devcontainer has both.
 `make e2e-platform` clones tx03v2 at the commit of `deploy/local/tx03v2.ref`, builds the whole local
-lab, deploys the app through the git server of the lab and Argo CD, runs 18 probes (the smoke test
+lab, deploys the app through the git server of the lab and Argo CD, runs the current probes (the smoke test
 over HTTPS through an Istio Gateway, mTLS, metrics, alert rules, the dashboard, logs, one trace from the
 edge to the database, Trivy reports, the HPA, a zero-downtime rollout, a database backup and restore,
 self-heal and two chaos experiments) and always destroys the lab
-([docs/LAB_LOCAL.md](docs/LAB_LOCAL.md)). It needs about 8 GB of memory for Docker, or 7 GB with
+([docs/LOCAL_LAB.md](docs/LOCAL_LAB.md)). It needs about 8 GB of memory for Docker, or 7 GB with
 `LOCAL_SIZE=small make e2e-platform` (the same platform with smaller limits and short retention), and
 takes 25-45 minutes on a laptop (about 20 in CI). With less memory, `make e2e` alone still proves the manifests
 on kind.
@@ -72,26 +73,31 @@ pointing to the original repositories: change them if you like, nothing depends 
 
 ## 7. Deploy to your own Google Cloud project (costs money)
 
-First complete the Google Cloud setup and the `tx03v2` full platform steps in its `FORK.md`. Set the
+First complete Google Cloud setup and the selected `tx03v2` core/full platform in its `FORK.md`. Set the
 three repository variables in `docs/RUNBOOK.md` section 6 and protect the `lab` environment.
 
 The release uses two manual workflows, both dispatched from `main`:
 
 1. Run `publish-images` with `ci_run_id` set to a successful CI run for the current `main` commit. It
-   verifies the five required checks, publishes the already-tested image IDs to GHCR without rebuild,
+   verifies six source jobs (the five ruleset checks plus continuity), publishes approved image IDs to GHCR without rebuild,
    and creates SBOMs and Sigstore attestations.
 2. Run `deploy-gcp` with `release_run_id` set to that publisher run. The workflow re-verifies the CI,
    image digests, SBOM hashes and attestations before the `lab` environment approval. After approval,
    it uses Workload Identity Federation, promotes those exact digests to Artifact Registry (no rebuild),
    attests the promoted digests and deploys them.
 
-Choose `platform_profile=core|full` to match the tx03v2 installation, and `deploy_mode=auto|gitops|push`:
+Choose `target=primary|secondary`, `platform_profile=core|full` to match the tx03v2 installation,
+and `deploy_mode=auto|gitops|push`:
 `auto` uses Argo CD when the `dx03v2` Application exists and otherwise applies the overlay directly. The
 full profile serves HTTPS on your delegated domain and enables the managed-mesh exercise; run it from
 `main`, because the Kyverno policy of tx03v2 admits only the promotion signed by your `deploy-gcp.yml` on
 `main`. The workflow never rebuilds or publishes a different image. A manual run of the script with
 `DEPLOY_MODE=push` is available for a deliberate exercise; see `docs/RUNBOOK.md` and use the same
 verified release bundle (it does not create the promotion signature).
+
+Before any TX plan/apply, configure its mandatory reviewed pricing/budget/duration/expiry gate.
+Secondary deployment selects the regional contract and independent GitOps branch, but does not
+fence/promote the database or switch DNS. Follow CONTINUITY and the operator approval procedure.
 
 ## 8-9. Report the run and keep the fork up to date
 
@@ -117,6 +123,7 @@ Pull requests to the original repository are welcome: see [CONTRIBUTING.md](CONT
 change to `api/`, `web/` or `e2e/` has to reach the three app repositories (the parity rule of
 AGENTS.md). Workflow runs from forks wait for the maintainer's approval, and the same harness decides.
 
-## R10: capacidade e FinOps
+## R10: capacity and FinOps
 
-Veja [Capacidade e SLO](docs/FINOPS.md) para carga limitada, HPA up/down, PDB/drain, rightsizing, pool PostgreSQL e showback. Prova Docker em Actions; nada executado na nuvem (v2).
+See [Capacity and SLO](docs/FINOPS.md) for bounded load, HPA up/down, PDB/drain,
+rightsizing, PostgreSQL pool and showback. Docker proof runs in Actions; not run in the cloud (v2).

@@ -19,7 +19,7 @@ resources:
   - networkpolicies.yaml
 patches:
   # Autopilot bills the requests of every container, and the sidecar default is far above what this lab
-  # needs (docs/CUSTOS.md of tx03v2): the proxy gets an explicit, small size on every workload.
+  # needs (docs/COSTS.md of tx03v2): the proxy gets an explicit, small size on every workload.
   - target:
       kind: Deployment
     patch: |-

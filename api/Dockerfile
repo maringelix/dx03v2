@@ -2,7 +2,7 @@
 #   docker build -f api/Dockerfile --build-arg GIT_SHA="$(git rev-parse HEAD)" -t dx03v2-api:local .
 # Runtime: distroless Node.js 24 (Debian 13), non-root uid 65532, no shell and no npm.
 # Default command: dist/server.js; migrations: `dist/migrate.js` as the command.
-# Images are pinned by digest; update procedure in docs/SUSTENTACAO.md.
+# Images are pinned by digest; update procedure in docs/MAINTENANCE.md.
 
 # node:24-alpine3.24 (verified 2026-10-10: Node 24.21.0, npm 11.19.0)
 FROM node:24-alpine3.24@sha256:ebfe2f90462722a7a4de65e91990e97fe0d401c70e0e762c5b53302f905ec1c1 AS deps
@@ -25,7 +25,7 @@ COPY web/package.json web/
 RUN npm ci --workspace api --include-workspace-root=false --omit=dev --ignore-scripts --no-audit --no-fund
 
 # gcr.io/distroless/nodejs24-debian13:nonroot (verified 2026-10-10: Node 24.21.0). The debian12
-# variant suggested by the spec is no longer rebuilt (still Node 24.14.0): see docs/ARQUITETURA.md.
+# variant suggested by the spec is no longer rebuilt (still Node 24.14.0): see docs/ARCHITECTURE.md.
 FROM gcr.io/distroless/nodejs24-debian13:nonroot@sha256:9eeb7f5887d0e239e78264b06f7f11d2e14be534050481803a9e4728fcdd278e AS runtime
 ARG GIT_SHA=unknown
 ARG SOURCE_REPOSITORY=maringelix/dx03v2

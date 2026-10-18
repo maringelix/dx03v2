@@ -1,5 +1,5 @@
 # Monthly dependency PRs: minor + patch grouped per ecosystem, majors one by one.
-# Review procedure: AGENTS.md (Dependency updater) and docs/SUSTENTACAO.md.
+# Review procedure: AGENTS.md (Dependency updater) and docs/MAINTENANCE.md.
 # Harness tools (tools/), the postgres:17-alpine and kind node digests (compose.yaml, ci.yml,
 # deploy/k8s, scripts/harness.sh, kind/kind-config.yaml) and the devcontainer are updated by hand
 # in the quarterly routine: they must change together (check version-consistency).
@@ -25,7 +25,7 @@ updates:
       # typescript-eslint 8.71 accepts typescript >=4.8.4 <6.1.0: a minor or major bump of
       # typescript fails npm ci (ERESOLVE) and would block the whole minor/patch group. Patches
       # still arrive; widen this by hand when typescript-eslint supports the new range
-      # (docs/SUSTENTACAO.md, section 4, quarterly review).
+      # (docs/MAINTENANCE.md, section 4, quarterly review).
       - dependency-name: typescript
         update-types:
           - version-update:semver-minor
@@ -49,13 +49,13 @@ updates:
       # The node build image follows the Node.js major of .nvmrc and engines.node (24): a major bump
       # (e.g. node:26) fails npm ci with EBADENGINE. Minor, patch and digest updates still arrive;
       # the next major is adopted by hand with .nvmrc, engines and the distroless runtime
-      # (docs/SUSTENTACAO.md, section 5.3).
+      # (docs/MAINTENANCE.md, section 5.3).
       - dependency-name: node
         update-types:
           - version-update:semver-major
       # The web image follows the nginx stable line (even minor, 1.30 now). A minor bump would move
       # it to the mainline (odd, 1.31); patch and digest updates of the stable line still arrive.
-      # The next stable line (1.32, ~April 2027) is adopted by hand (docs/SUSTENTACAO.md, section 4).
+      # The next stable line (1.32, ~April 2027) is adopted by hand (docs/MAINTENANCE.md, section 4).
       - dependency-name: nginxinc/nginx-unprivileged
         update-types:
           - version-update:semver-minor

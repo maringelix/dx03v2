@@ -6,6 +6,17 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- Standardize public documentation and contributor/agent guidance in English;
+  rename runbooks to canonical English paths, consolidate the README and link
+  the central onboarding guide. Preserve historical dates, measurements and contracts.
+- Translate shared UI labels, error messages, announcements and metadata; use
+  English locale/date formatting and update existing UI tests without changing
+  request payloads, application logic or Unicode/HTML-escaping fixtures.
+- Align onboarding with current CI publication, exact-digest promotion, protected
+  full deployment and explicit secondary recovery. Cloud v2 remains unrun.
+
 ### Fixed
 
 - Pin the local platform to the merged tx03v2 cloud-readiness fixes (#18), including bounded
@@ -112,7 +123,7 @@ All notable changes to this project are documented here. The format follows
 - The GCP deployment accepts a `release_run_id`, promotes verified digests through the repository-
   scoped Artifact Registry writer identity, and records both immutable digests in GitOps.
 - `deploy/local/tx03v2.ref` follows tx03v2 to `bd8978d` (tx03v2#9: the External Secrets of the local lab without the Autopilot CPU limits, and S.8).
-- Comments, script messages and docs say "the contract" or point to `docs/CONTRATO.md` instead of
+- Comments, script messages and docs say "the contract" or point to `docs/CONTRACT.md` instead of
   "contract v1": the contract has been at version 2 since round 1 (roadmap S.8); the README says the deploy script follows contract v2 and HTTPS is outside it.
 - The family table of both READMEs links the family hub `tx00v2` (roadmap, family guardrails,
   cross-repo checks).
@@ -129,7 +140,7 @@ All notable changes to this project are documented here. The format follows
   `verified in CI` for the rows backed by a CI job (compose stays `verified locally`).
 - Dependabot ignores major bumps of the `node` build image (it follows `.nvmrc` and `engines.node`;
   `node:26` failed `npm ci` with EBADENGINE).
-- The parity notes (docs/SUSTENTACAO.md sections 2 and 5.11, docs/ARQUITETURA.md) no longer list
+- The parity notes (docs/MAINTENANCE.md sections 2 and 5.11, docs/ARCHITECTURE.md) no longer list
   the Google Cloud load balancer case of the rate-limit test as pending: dx01v2 and dx02v2 have it
   too (ported on 2026-10-12).
 
@@ -177,7 +188,7 @@ All notable changes to this project are documented here. The format follows
   repository variable of the same name): a fork can test against its own tx03v2. A pinned commit that is
   not in that repository fails with a clear message.
 - The devcontainer declares 4 CPUs and 8 GB (the platform e2e runs the whole local lab).
-- The app on the full local platform of tx03v2 (docs/LAB_LOCAL.md), ported from `dx01v2` and
+- The app on the full local platform of tx03v2 (docs/LOCAL_LAB.md), ported from `dx01v2` and
   `dx02v2`: overlay `local-platform` (Istio Gateway with HTTPS from cert-manager, HTTPRoutes,
   ExternalSecrets from `local-secrets`, HPA, `PeerAuthentication` STRICT, `AuthorizationPolicy` by
   identity, NetworkPolicies with HBONE, ServiceMonitor, five alert rules, a Grafana dashboard);
@@ -191,7 +202,7 @@ All notable changes to this project are documented here. The format follows
   straight to the API like the GKE Gateway and keeps an external `X-Request-Id` like nginx (the same
   mode dx02v2 has; the `dx01v2` smoke accepts both API CSPs and has no edge modes).
 - First version: the dx01v2 app retargeted to GKE Autopilot (the cluster of `tx03v2`, contract v1,
-  docs/CONTRATO.md). It started from every tracked file of `dx02v2` (the Azure app, itself the
+  docs/CONTRACT.md). It started from every tracked file of `dx02v2` (the Azure app, itself the
   dx01v2 app at commit `22e69c4`), with the names changed (`dx02v2` → `dx03v2`, `tx02v2` → `tx03v2`)
   and the Azure path replaced:
   - Google Cloud path: `deploy/k8s/components/gcp` and `overlays/gcp` (Gateway `dx03v2` of class
@@ -232,8 +243,8 @@ All notable changes to this project are documented here. The format follows
   - One API integration test more (`api/test/integration/rate-limit.test.ts`): the
     `[<supplied>,]<client-ip>,<lb-ip>` `X-Forwarded-For` of the Google Cloud Application Load
     Balancer with `TRUST_PROXY_HOPS=2`. It started here and was then ported to dx01v2 and dx02v2
-    (parity, docs/SUSTENTACAO.md).
-  - Brazilian Portuguese docs for the Google Cloud pair: architecture (AWS / Azure / Google Cloud and
+    (parity, docs/MAINTENANCE.md).
+  - Initial Brazilian Portuguese docs (subsequently translated) for the Google Cloud pair: architecture (AWS / Azure / Google Cloud and
     v1 → v2 tables), contract v1 (app side), runbook, guardrails, harness, sustainment (GKE, Gateway
     API, gcloud, Cloud SQL root, parity routine), publication.
 
@@ -255,4 +266,5 @@ All notable changes to this project are documented here. The format follows
 
 ## R10: capacidade e FinOps
 
-Veja [Capacidade e SLO](docs/FINOPS.md) para carga limitada, HPA up/down, PDB/drain, rightsizing, pool PostgreSQL e showback. Prova Docker em Actions; nada executado na nuvem (v2).
+See [Capacity and SLO](docs/FINOPS.md) for bounded load, HPA up/down, PDB/drain,
+rightsizing, PostgreSQL pool and showback. Docker proof runs in Actions; not run in the cloud (v2).

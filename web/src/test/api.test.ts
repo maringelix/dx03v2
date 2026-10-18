@@ -34,19 +34,19 @@ describe('api client', () => {
       status: 400,
       code: 'validation_error',
       requestId: 'req-123',
-      message: 'Mensagem recusada: text: must have 1 to 280 characters',
+      message: 'Message rejected: text: must have 1 to 280 characters',
     });
   });
 
   it('keeps unknown API errors and non-JSON bodies understandable', async () => {
     mockFetch(() => apiError(500, 'internal_error', 'Internal server error'));
-    await expect(listMessages()).rejects.toMatchObject({ message: 'Erro da API: Internal server error' });
+    await expect(listMessages()).rejects.toMatchObject({ message: 'API error: Internal server error' });
 
     mockFetch(() => new Response('<html>bad gateway</html>', { status: 502 }));
     await expect(listMessages()).rejects.toMatchObject({
       status: 502,
       code: 'http_error',
-      message: 'Erro da API: HTTP 502',
+      message: 'API error: HTTP 502',
     });
   });
 
@@ -63,9 +63,9 @@ describe('api client', () => {
 describe('describeError', () => {
   it('adds the request id when there is one', () => {
     expect(describeError(new ApiError(503, 'db_unavailable', 'Banco fora', 'abc'))).toBe(
-      'Banco fora (id da requisição: abc)',
+      'Banco fora (request ID: abc)',
     );
     expect(describeError(new ApiError(0, 'network_error', 'Sem rede'))).toBe('Sem rede');
-    expect(describeError(new Error('x'))).toBe('Erro inesperado.');
+    expect(describeError(new Error('x'))).toBe('Unexpected error.');
   });
 });

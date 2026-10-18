@@ -1,6 +1,6 @@
 // Same-origin client of the dx03v2 API (/api is routed to the API by nginx or by Application
 // Gateway for Containers).
-// Responses are checked before use; every failure becomes an ApiError with a pt-BR message.
+// Responses are checked before use; every failure becomes an ApiError with an English message.
 
 export interface Message {
   id: number;
@@ -53,11 +53,11 @@ function isInfo(value: unknown): value is ApiInfo {
 }
 
 const FRIENDLY: Record<string, string> = {
-  rate_limited: 'Muitas mensagens em pouco tempo. Espere um minuto e tente de novo.',
-  unauthorized: 'Token de admin inválido.',
-  admin_disabled: 'O modo admin está desligado nesta instalação (sem ADMIN_TOKEN).',
-  db_unavailable: 'O banco de dados está indisponível. Tente de novo em instantes.',
-  not_found: 'A mensagem não existe mais.',
+  rate_limited: 'Too many messages. Wait a minute and try again.',
+  unauthorized: 'Invalid admin token.',
+  admin_disabled: 'Admin mode is disabled in this installation (no ADMIN_TOKEN).',
+  db_unavailable: 'The database is unavailable. Try again shortly.',
+  not_found: 'The message no longer exists.',
 };
 
 function errorFrom(status: number, body: unknown): ApiError {
@@ -66,7 +66,7 @@ function errorFrom(status: number, body: unknown): ApiError {
   const requestId = typeof detail.requestId === 'string' ? detail.requestId : undefined;
   const apiMessage = typeof detail.message === 'string' ? detail.message : `HTTP ${status}`;
   const message =
-    FRIENDLY[code] ?? (code === 'validation_error' ? `Mensagem recusada: ${apiMessage}` : `Erro da API: ${apiMessage}`);
+    FRIENDLY[code] ?? (code === 'validation_error' ? `Message rejected: ${apiMessage}` : `API error: ${apiMessage}`);
   return new ApiError(status, code, message, requestId);
 }
 
@@ -75,7 +75,7 @@ async function call(path: string, init: RequestInit = {}): Promise<unknown> {
   try {
     response = await fetch(path, { ...init, headers: { Accept: 'application/json', ...init.headers } });
   } catch {
-    throw new ApiError(0, 'network_error', 'Não foi possível falar com a API. Verifique a conexão.');
+    throw new ApiError(0, 'network_error', 'Could not reach the API. Check your connection.');
   }
   if (response.status === 204) {
     return undefined;
@@ -88,7 +88,7 @@ async function call(path: string, init: RequestInit = {}): Promise<unknown> {
 }
 
 function invalidResponse(): ApiError {
-  return new ApiError(502, 'invalid_response', 'A API respondeu num formato inesperado.');
+  return new ApiError(502, 'invalid_response', 'The API returned an unexpected response format.');
 }
 
 export async function listMessages(limit = 50): Promise<Message[]> {
@@ -126,7 +126,7 @@ export async function getInfo(): Promise<ApiInfo> {
 /** User-facing text for any error, with the request ID when the API sent one. */
 export function describeError(err: unknown): string {
   if (err instanceof ApiError) {
-    return err.requestId ? `${err.message} (id da requisição: ${err.requestId})` : err.message;
+    return err.requestId ? `${err.message} (request ID: ${err.requestId})` : err.message;
   }
-  return 'Erro inesperado.';
+  return 'Unexpected error.';
 }

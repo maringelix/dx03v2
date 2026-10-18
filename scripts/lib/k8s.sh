@@ -23,7 +23,7 @@ declare -A K8S_LOCAL_PARAM_PATTERN=(
 )
 
 # Formats accepted for every deploy parameter (values come from the Parameter Manager parameter
-# tx03v2-lab-contract, docs/CONTRATO.md). Google Cloud project IDs and regions; resource names follow
+# tx03v2-lab-contract, docs/CONTRACT.md). Google Cloud project IDs and regions; resource names follow
 # RFC 1035 (a lowercase letter, then up to 62 lowercase letters, digits or hyphens, no trailing
 # hyphen).
 K8S_GCP_PROJECT='[a-z][a-z0-9-]{4,28}[a-z0-9]'

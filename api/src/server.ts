@@ -66,7 +66,7 @@ export async function startServer(config: Config, logger?: Logger): Promise<Runn
   const state: AppState = { shuttingDown: false };
   const server = createServer(createApp({ config, pool, logger: log, metrics, state, version }));
   // Keep-alive connections from the proxies must outlive their idle timeouts (nginx 60 s; the
-  // Application Gateway for Containers timeouts are discussed in docs/ARQUITETURA.md).
+  // Application Gateway for Containers timeouts are discussed in docs/ARCHITECTURE.md).
   server.keepAliveTimeout = 65_000;
   server.headersTimeout = 66_000;
   const metricsServer = createMetricsServer(metrics);

@@ -80,7 +80,7 @@ export function App() {
     try {
       const created = await createMessage(draft);
       setItems((current) => [created, ...current]);
-      announce('Mensagem publicada.');
+      announce('Message published.');
       return true;
     } catch (err) {
       fail(err);
@@ -92,7 +92,7 @@ export function App() {
     try {
       await deleteMessage(message.id, adminToken);
       setItems((current) => current.filter((item) => item.id !== message.id));
-      announce(`Mensagem de ${message.author} apagada.`);
+      announce(`Message by ${message.author} deleted.`);
     } catch (err) {
       fail(err);
     }
@@ -101,13 +101,13 @@ export function App() {
   return (
     <div className="page">
       <header className="masthead">
-        <h1>Mural de mensagens</h1>
-        <p className="muted">Deixe um recado. As mensagens aparecem da mais nova para a mais antiga.</p>
+        <h1>Message board</h1>
+        <p className="muted">Leave a message. Messages appear from newest to oldest.</p>
       </header>
 
       <main className="content">
         <section className="card" aria-labelledby="form-title">
-          <h2 id="form-title">Nova mensagem</h2>
+          <h2 id="form-title">New message</h2>
           <MessageForm onSubmit={publish} />
         </section>
 
@@ -122,7 +122,7 @@ export function App() {
 
         <section className="card" aria-labelledby="list-title" aria-busy={loading}>
           <div className="section-header">
-            <h2 id="list-title">Mensagens</h2>
+            <h2 id="list-title">Messages</h2>
             <button
               type="button"
               className="button"
@@ -130,7 +130,7 @@ export function App() {
                 void load();
               }}
             >
-              Atualizar
+              Refresh
             </button>
           </div>
           <MessageList

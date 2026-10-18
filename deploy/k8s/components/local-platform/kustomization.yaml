@@ -1,4 +1,4 @@
-# The local lab of tx03v2 (docs/CONTRATO.md of tx03v2, "Lab local"): the full v1 platform on kind.
+# The local lab of tx03v2 (docs/CONTRACT.md of tx03v2, "Local lab"): the full v1 platform on kind.
 # Namespace-scoped resources only: the namespace, the ClusterSecretStore local-secrets, the AppProject
 # and the CA ConfigMap lab-ca belong to tx03v2 (scripts/deploy-local.sh copies lab-ca here). Values
 # read from the cluster at deploy time (image names, lab network, database address) arrive through

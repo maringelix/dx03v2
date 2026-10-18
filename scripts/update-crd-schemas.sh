@@ -190,7 +190,7 @@ update() {
   find "$SCHEMA_DIR" -mindepth 1 -type d -empty -delete
   cp -R "$WORK_DIR/generated/." "$SCHEMA_DIR/"
   log "updated deploy/k8s/schemas to Gateway API $version and datreeio/CRDs-catalog ${commit:0:7}; next:"
-  log "HARNESS_STRICT=1 make verify, and the calendar in docs/SUSTENTACAO.md (the version GKE serves)."
+  log "HARNESS_STRICT=1 make verify, and the calendar in docs/MAINTENANCE.md (the version GKE serves)."
 }
 
 main() {
