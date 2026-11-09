@@ -8,6 +8,27 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- Dependency round of 2026-11-09. It applies the useful part of the twelve Dependabot PRs opened
+  since 2026-10-18 and replaces them; they are closed with a link to this change.
+  - Security: `body-parser` 2.4.0 (CVE-2026-111181), `ip-address` 10.7.6 and `undici` 8.12.4 in
+    the lockfile. Base images: distroless `nodejs24-debian13:nonroot` `088a0163` (Node.js 24.22.2,
+    zlib CVE-2026-76844 and CVE-2026-85091 fixed), `node:24-alpine3.24` `a34ab6d7` for every build
+    stage, `nginx-unprivileged:1.30-alpine-slim` `5d8bb943` (nginx 1.30.6). That nginx build still
+    ships musl 1.2.6-r2 and zlib 1.3.2-r0, so the web runtime installs the fixed Alpine packages
+    (musl 1.2.6-r3, zlib 1.4-r0) until a newer upstream digest contains them. The trivy gate keeps
+    HIGH/CRITICAL with no exception.
+  - npm minor and patch: eslint 10.14.0, globals 17.14.0, typescript-eslint 8.72.1,
+    @opentelemetry/semantic-conventions 1.45.0, express-rate-limit 8.7.3, zod 4.6.7, supertest 7.3.2,
+    vitest and @vitest/coverage-v8 5.1.0, react and react-dom 19.3.1, @testing-library/user-event
+    14.6.8, @vitejs/plugin-react 6.3.0, vite 8.3.7.
+  - Not adopted: the OpenTelemetry SDK 3 line (`@opentelemetry/api` 1.10, `exporter-trace-otlp-http`
+    0.300+, `resources` 3.x). `sdk-trace-node` 2.12.0 accepts `@opentelemetry/api` <1.10.0; the
+    2026-11-01 group installed two copies of the API and failed eslint. Dependabot now ignores those
+    ranges until the migration is done by hand in the three apps.
+  - CodeQL Action `init`/`analyze` pinned to the v4.39.3 commit (the old pin was the tag object
+    of v4.39.0, not its commit).
+  - `deploy/local/tx03v2.ref` pins tx03v2#22 (`70731b6`), the merged tx03v2 round commit.
+
 - Standardize public documentation and contributor/agent guidance in English;
   rename runbooks to canonical English paths, consolidate the README and link
   the central onboarding guide. Preserve historical dates, measurements and contracts.

@@ -4,8 +4,8 @@
 # Default command: dist/server.js; migrations: `dist/migrate.js` as the command.
 # Images are pinned by digest; update procedure in docs/MAINTENANCE.md.
 
-# node:24-alpine3.24 (verified 2026-10-10: Node 24.21.0, npm 11.19.0)
-FROM node:24-alpine3.24@sha256:ebfe2f90462722a7a4de65e91990e97fe0d401c70e0e762c5b53302f905ec1c1 AS deps
+# node:24-alpine3.24 (verified 2026-11-09: Node 24.22.2, npm 11.19.1)
+FROM node:24-alpine3.24@sha256:a34ab6d7f6f4813f4d0c5469d74685604b962fbdbf5793a7bc7b4998ecb867c8 AS deps
 WORKDIR /app
 COPY package.json package-lock.json .npmrc ./
 COPY api/package.json api/
@@ -17,16 +17,16 @@ COPY api/tsconfig.json api/tsconfig.build.json api/
 COPY api/src api/src
 RUN npm run build --workspace api
 
-FROM node:24-alpine3.24@sha256:ebfe2f90462722a7a4de65e91990e97fe0d401c70e0e762c5b53302f905ec1c1 AS prod-deps
+FROM node:24-alpine3.24@sha256:a34ab6d7f6f4813f4d0c5469d74685604b962fbdbf5793a7bc7b4998ecb867c8 AS prod-deps
 WORKDIR /app
 COPY package.json package-lock.json .npmrc ./
 COPY api/package.json api/
 COPY web/package.json web/
 RUN npm ci --workspace api --include-workspace-root=false --omit=dev --ignore-scripts --no-audit --no-fund
 
-# gcr.io/distroless/nodejs24-debian13:nonroot (verified 2026-10-10: Node 24.21.0). The debian12
+# gcr.io/distroless/nodejs24-debian13:nonroot (verified 2026-11-09: Node 24.22.2). The debian12
 # variant suggested by the spec is no longer rebuilt (still Node 24.14.0): see docs/ARCHITECTURE.md.
-FROM gcr.io/distroless/nodejs24-debian13:nonroot@sha256:9eeb7f5887d0e239e78264b06f7f11d2e14be534050481803a9e4728fcdd278e AS runtime
+FROM gcr.io/distroless/nodejs24-debian13:nonroot@sha256:088a01637f22908632ba09018be2e0b516f2fa6f7869c191d29491139db43c78 AS runtime
 ARG GIT_SHA=unknown
 ARG SOURCE_REPOSITORY=maringelix/dx03v2
 LABEL org.opencontainers.image.title="dx03v2-api" \
