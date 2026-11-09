@@ -22,13 +22,27 @@ updates:
       - dependency-name: '@types/node'
         update-types:
           - version-update:semver-major
-      # typescript-eslint 8.71 accepts typescript >=4.8.4 <6.1.0: a minor or major bump of
+      # typescript-eslint 8.72 accepts typescript >=4.8.4 <6.1.0: a minor or major bump of
       # typescript fails npm ci (ERESOLVE) and would block the whole minor/patch group. Patches
       # still arrive; widen this by hand when typescript-eslint supports the new range
       # (docs/MAINTENANCE.md, section 4, quarterly review).
       - dependency-name: typescript
         update-types:
           - version-update:semver-minor
+          - version-update:semver-major
+      # OpenTelemetry JS stays on the SDK 2 line: sdk-trace-node 2.12.0 (its newest release) accepts
+      # @opentelemetry/api >=1.0.0 <1.10.0, while exporter-trace-otlp-http 0.300+ and resources 3.x
+      # belong to the SDK 3 line. Mixing the lines installs two copies of @opentelemetry/api; the
+      # 2026-11-01 group failed eslint (no-unsafe-enum-comparison). The SDK 3 migration is adopted by
+      # hand in the three apps (docs/MAINTENANCE.md, section 4, quarterly review).
+      - dependency-name: '@opentelemetry/api'
+        versions:
+          - '>=1.10.0'
+      - dependency-name: '@opentelemetry/exporter-trace-otlp-http'
+        versions:
+          - '>=0.300.0'
+      - dependency-name: '@opentelemetry/resources'
+        update-types:
           - version-update:semver-major
 
   - package-ecosystem: docker
