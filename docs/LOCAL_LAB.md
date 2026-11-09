@@ -39,7 +39,8 @@ With the tx03v2 lab already running (`make local-up` there), deploy alone:
 The reference integrates the merged [tx03v2#18 readiness fixes](https://github.com/maringelix/tx03v2/pull/18),
 including bounded OpenCost convergence polling. Positive measured allocation
 remains mandatory. The reference also integrates [tx03v2#19 English documentation](https://github.com/maringelix/tx03v2/pull/19)
-at the actual main merge `669911716eaec1866fb9bb8d831ab5b32e5d33ed`.
+and the [tx03v2#22 dependency round](https://github.com/maringelix/tx03v2/pull/22) at the actual main merge
+`70731b6bcef3b3c42100e1824046f86cec2dc42f`.
 Full/small jobs use that same pinned source. Local evidence does not
 validate managed IAM, admission or DR.
 

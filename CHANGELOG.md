@@ -27,7 +27,7 @@ All notable changes to this project are documented here. The format follows
     ranges until the migration is done by hand in the three apps.
   - CodeQL Action `init`/`analyze` pinned to the v4.39.3 commit (the old pin was the tag object
     of v4.39.0, not its commit).
-  - `deploy/local/tx03v2.ref` pins the merged tx03v2 round commit.
+  - `deploy/local/tx03v2.ref` pins tx03v2#22 (`70731b6`), the merged tx03v2 round commit.
 
 - Standardize public documentation and contributor/agent guidance in English;
   rename runbooks to canonical English paths, consolidate the README and link
