@@ -23,6 +23,11 @@ platform infrastructure; its maintenance is documented there.
 - DX02 app derived from DX01 commit 22e69c4, with section 5.11 differences. Google's two-hop
   XFF integration case originated here and is ported to both siblings.
 - No scanner exceptions (.trivyignore.yaml empty).
+- Open Dependabot advisory (2026-11-09): GHSA-g3hv-75wg-m249 (medium, pattern amplification) in
+  minimatch 10.2.6, a development dependency of eslint, @eslint/config-array and
+  @typescript-eslint/typescript-estree; it is not in the images. The fix exists only in minimatch
+  11.0.1, which those packages do not accept yet, and an `overrides` entry would put an untested
+  major under eslint. Re-check at the next monthly Dependabot round.
 
 ## 3. Routines
 
