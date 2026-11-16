@@ -1,5 +1,12 @@
 # AGENTS.md
 
+<!-- aether-handoff-2026-11-16 -->
+## Out of scope: Aether and ReasonneR
+
+At the maintainer's request (2026-11-16), agents working in this repository must
+not change anything in the Aether product or in the `reasonner` GitHub
+organization.
+
 Instructions for AI coding agents and humans working in `dx03v2`. `CLAUDE.md` points here; this file
 is the source of truth. The full rule list is [docs/GUARDRAILS.md](docs/GUARDRAILS.md).
 All public documentation is written in English. This includes UI text, examples, comments and contributor guidance.
